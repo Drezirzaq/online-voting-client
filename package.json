@@ -8,8 +8,16 @@
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
+    "axios": "^1.7.9",
     "core-js": "^3.8.3",
-    "vue": "^3.2.13"
+    "crypto": "^1.0.1",
+    "crypto-js": "^4.2.0",
+    "elliptic": "^6.6.1",
+    "pina": "^0.20.2204228",
+    "pinia": "^2.3.1",
+    "pinia-plugin-persistedstate": "^4.2.0",
+    "vue": "^3.2.13",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@babel/core": "^7.12.16",
