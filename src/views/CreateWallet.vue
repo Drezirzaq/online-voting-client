@@ -25,6 +25,7 @@ export default {
   methods: {
     async createWallet() {
       try {
+
         const wallet = await createWallet(this.password);
         console.log('Кошелек создан:', wallet.address);
         // this.$router.push({ path: '/personal-account', query: { address: wallet.address, password: this.password } });

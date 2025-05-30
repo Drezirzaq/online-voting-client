@@ -6,12 +6,22 @@ export const useWalletStore = defineStore('wallet', {
     credentials: {
       address: '',
       password: ''
-    }
+    },
+    keys: {
+      publicKey: '',
+      privateKey: ''
+    },
+    voted: [],
+    registred: []
   }),
   actions: {
     setCredentials(address, password) {
       this.credentials.address = address;
       this.credentials.password = password;
+    },
+    setKeys(publicKey, privateKey){
+      this.keys.publicKey = publicKey;
+      this.keys.privateKey = privateKey;
     },
     logout() {
       this.credentials = { address: '', password: '' };
@@ -21,8 +31,8 @@ export const useWalletStore = defineStore('wallet', {
         const password = this.credentials.password;
         if (!password) throw new Error("Пароль не найден!");
 
-        const encryptedPublicKey = localStorage.getItem('encryptedPublicKey');
-        const encryptedPrivateKey = localStorage.getItem('encryptedPrivateKey');
+        const encryptedPublicKey = this.keys.publicKey;//localStorage.getItem('encryptedPublicKey');
+        const encryptedPrivateKey = this.keys.privateKey;//localStorage.getItem('encryptedPrivateKey');
 
         if (!encryptedPublicKey || !encryptedPrivateKey) {
           throw new Error("Ключи не найдены в localStorage!");

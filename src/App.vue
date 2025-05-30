@@ -2,6 +2,7 @@
   <div id="app">
     <nav>
       <router-link to="/node-status">Статус</router-link>
+      <router-link to="/personal-account">Личный кабинет</router-link>
     </nav>
     <router-view />
   </div>

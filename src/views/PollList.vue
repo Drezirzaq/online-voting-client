@@ -8,6 +8,7 @@
         <ul v-if="activePolls.length">
           <li v-for="poll in activePolls" :key="poll.pollId">
             <router-link :to="'/personal-account/polls/' + poll.pollId" class="poll-link">
+              <span v-if="poll.isPrivate" class="lock-icon">🔒</span>
               {{ poll.title }}
             </router-link>
           </li>
@@ -20,6 +21,7 @@
         <ul v-if="finishedPolls.length">
           <li v-for="poll in finishedPolls" :key="poll.pollId">
             <router-link :to="'/personal-account/polls/' + poll.pollId" class="poll-link finished">
+              <span v-if="poll.isPrivate" class="lock-icon">🔒</span>
               {{ poll.title }}
             </router-link>
           </li>
@@ -99,13 +101,24 @@ li {
 }
 
 .poll-link {
+  position: relative;
   display: block;
-  padding: 10px;
+  padding: 10px 15px;
   background: #007bff;
   color: white;
   text-decoration: none;
   border-radius: 5px;
   transition: 0.3s;
+  text-align: center;
+}
+
+.poll-link .lock-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  pointer-events: none;
 }
 
 .poll-link:hover {
@@ -139,4 +152,5 @@ li {
   color: #999;
   font-size: 16px;
 }
+
 </style>

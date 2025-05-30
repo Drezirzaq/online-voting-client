@@ -1,5 +1,6 @@
 import CryptoJS from 'crypto-js'
 import axios from 'axios';
+import { useWalletStore } from './walletStore';
 const API_BASE_URL = 'http://192.168.1.87:5000/api';
 
 
@@ -11,7 +12,6 @@ export async function sendTransaction(path, transaction){
     throw new Error(`Ошибка при отправке транзакции: ${error}`);
   }
 }
-
 
 export async function signData(data, privateKeyBase64) {
     const privateKey = await window.crypto.subtle.importKey(
@@ -64,23 +64,28 @@ export async function getWalletBalance(address) {
   }
 }
 
-
 export async function generateKeyPair() {
-    const keyPair = await window.crypto.subtle.generateKey(
-        {
-            name: "RSASSA-PKCS1-v1_5",
-            modulusLength: 2048, // Длина ключа
-            publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // 65537
-            hash: { name: "SHA-256" }, // Алгоритм хеширования
-        },
-        true, // Можно ли экспортировать ключи
-        ["sign", "verify"] // Использование ключей
+  let keyPair;
+  try {
+    keyPair = await window.crypto.subtle.generateKey(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048, // Длина ключа
+        publicExponent: new Uint8Array([0x01, 0x00, 0x01]), // 65537
+        hash: { name: "SHA-256" }, // Алгоритм хеширования
+      },
+      true, // Можно ли экспортировать ключи
+      ["sign", "verify"] // Использование ключей
     );
+  }
+  catch (e)
+  {
+    console.log(e);
+  }
 
     // Экспорт ключей в формате base64
     const publicKey = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
-    const privateKey = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-
+  const privateKey = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
     return {
         publicKey: arrayBufferToBase64(publicKey),
         privateKey: arrayBufferToBase64(privateKey),
@@ -124,6 +129,7 @@ export function decryptData(encryptedData, password) {
 export async function createWallet(password) {
 
   const { privateKey, publicKey } = await generateKeyPair();
+  const walletStore = useWalletStore();
   const address = createWalletAddress(publicKey);
 
   try {
@@ -138,11 +144,12 @@ export async function createWallet(password) {
 
   const encryptedPrivateKey = encryptData(privateKey, password);
   const encryptedPublicKey = encryptData(publicKey, password);
+  walletStore.setKeys(encryptedPublicKey, encryptedPrivateKey);
+  
 
-
-  localStorage.setItem('walletAddress', address);
-  localStorage.setItem('encryptedPrivateKey', encryptedPrivateKey);
-  localStorage.setItem('encryptedPublicKey', encryptedPublicKey);
+  // localStorage.setItem('walletAddress', address);
+  // localStorage.setItem('encryptedPrivateKey', encryptedPrivateKey);
+  // localStorage.setItem('encryptedPublicKey', encryptedPublicKey);
 
 
   console.log('Кошелек создан и сохранен в localStorage:');
