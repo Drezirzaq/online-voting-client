@@ -4,21 +4,44 @@
     <form @submit.prevent="submitPoll">
       <div class="form-group">
         <label for="title">Название голосования:</label>
-        <input type="text" id="title" v-model="pollTitle" required placeholder="Введите название голосования" />
+        <input
+          type="text"
+          id="title"
+          v-model="pollTitle"
+          required
+          placeholder="Введите название голосования"
+        />
       </div>
 
-      <div v-for="(option, index) in options" :key="index" class="form-group option-group">
-        <input type="text" v-model="options[index]" required placeholder="Введите вариант" />
-        <button type="button" class="remove-btn" @click="removeOption(index)" v-if="options.length > 2">✖</button>
+      <div
+        v-for="(option, index) in options"
+        :key="index"
+        class="form-group option-group"
+      >
+        <input
+          type="text"
+          v-model="options[index]"
+          required
+          placeholder="Введите вариант"
+        />
+        <button
+          type="button"
+          class="remove-btn"
+          @click="removeOption(index)"
+          v-if="options.length > 2"
+        >
+          ✖
+        </button>
       </div>
 
-      <button type="button" class="add-btn" @click="addOption">Добавить вариант</button>
+      <button type="button" class="add-btn" @click="addOption">
+        Добавить вариант
+      </button>
 
       <div class="checkbox-group">
         <input type="checkbox" id="private" v-model="isPrivate" />
         <label for="private">Закрытое голосование</label>
       </div>
-
 
       <div v-if="isPrivate" class="invited-users">
         <label>Приглашённые пользователи:</label>
@@ -27,20 +50,34 @@
           :key="index"
           class="invited-user-row"
         >
-          <input type="text" v-model="invitedUsers[index]" placeholder="Имя пользователя" />
+          <input
+            type="text"
+            v-model="invitedUsers[index]"
+            placeholder="Имя пользователя"
+          />
           <button
             type="button"
             class="remove-btn"
             @click="removeUser(index)"
             v-if="invitedUsers.length > 1"
-          >✖</button>
+          >
+            ✖
+          </button>
         </div>
-        <button type="button" class="add-user-btn" @click="addUser">Добавить пользователя</button>
-      </div>  
+        <button type="button" class="add-user-btn" @click="addUser">
+          Добавить пользователя
+        </button>
+      </div>
 
       <div class="form-group">
         <label for="tokens">Количество токенов:</label>
-        <input type="number" id="tokens" v-model.number="tokenAmount" min="0" placeholder="Введите количество токенов" />
+        <input
+          type="number"
+          id="tokens"
+          v-model.number="tokenAmount"
+          min="0"
+          placeholder="Введите количество токенов"
+        />
       </div>
 
       <button type="submit">Создать голосование</button>
@@ -49,23 +86,24 @@
     <div v-if="pollCreated" class="poll-preview">
       <h3>Новое голосование:</h3>
       <p><strong>Название:</strong> {{ pollTitle }}</p>
-      <p><strong>Варианты:</strong> {{ options.join(' | ') }}</p>
-      <p><strong>Тип:</strong> {{ isPrivate ? 'Закрытое' : 'Открытое' }}</p>
-      <p v-if="isPrivate"><strong>Приглашённые:</strong> {{ invitedUsers.join(', ') }}</p>
+      <p><strong>Варианты:</strong> {{ options.join(" | ") }}</p>
+      <p><strong>Тип:</strong> {{ isPrivate ? "Закрытое" : "Открытое" }}</p>
+      <p v-if="isPrivate">
+        <strong>Приглашённые:</strong> {{ invitedUsers.join(", ") }}
+      </p>
       <p><strong>Токены:</strong> {{ tokenAmount }}</p>
     </div>
   </div>
 </template>
 
-
 <script>
-import { sendTransaction, signData } from '../services/walletService';
-import { useWalletStore } from '../services/walletStore';
+import { sendTransaction, signData } from "../services/walletService";
+import { useWalletStore } from "../services/walletStore";
 
 export default {
   data() {
     return {
-      pollTitle: "", 
+      pollTitle: "",
       options: ["", ""],
       pollCreated: false,
       tokenAmount: 0,
@@ -75,8 +113,8 @@ export default {
   },
   setup() {
     const walletStore = useWalletStore();
-    return { 
-      walletStore
+    return {
+      walletStore,
     };
   },
   methods: {
@@ -95,7 +133,6 @@ export default {
       }
     },
     async submitPoll() {
-
       try {
         const keys = this.walletStore.getKeyes();
         console.log("KEYS", keys.privateKey);
@@ -103,13 +140,13 @@ export default {
           transactionType: 1,
           publicKey: keys.publicKey.toString(),
           fromAddress: this.walletStore.credentials.address.toString(),
-          signature : '',
+          signature: "",
           timestamp: new Date().toISOString(),
           pollTitle: this.pollTitle,
           options: this.options,
           isPrivate: this.isPrivate,
           invitedUsers: this.invitedUsers,
-          tokensAmount: this.tokenAmount
+          tokensAmount: this.tokenAmount,
         };
         console.log("TRANSACTION");
         const rawData = `${transactionData.publicKey}${transactionData.fromAddress}${transactionData.timestamp}${transactionData.pollTitle}`;

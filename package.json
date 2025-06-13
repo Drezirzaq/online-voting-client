@@ -9,8 +9,10 @@
   },
   "dependencies": {
     "@noble/secp256k1": "^2.2.3",
+    "assert": "^2.1.0",
     "axios": "^1.7.9",
     "big-integer": "^1.6.52",
+    "buffer": "^6.0.3",
     "circomlibjs": "^0.1.7",
     "core-js": "^3.8.3",
     "crypto": "^1.0.1",
@@ -20,6 +22,7 @@
     "pina": "^0.20.2204228",
     "pinia": "^2.3.1",
     "pinia-plugin-persistedstate": "^4.2.0",
+    "process": "^0.11.10",
     "snarkjs": "^0.7.5",
     "vue": "^3.2.13",
     "vue-router": "^4.5.0"
@@ -29,7 +32,7 @@
     "@babel/eslint-parser": "^7.12.16",
     "@vue/cli-plugin-babel": "~5.0.0",
     "@vue/cli-plugin-eslint": "~5.0.0",
-    "@vue/cli-service": "~5.0.0",
+    "@vue/cli-service": "^5.0.8",
     "eslint": "^7.32.0",
     "eslint-plugin-vue": "^8.0.3"
   },

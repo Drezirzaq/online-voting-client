@@ -1,12 +1,27 @@
 <template>
   <div class="poll-details">
-    <h2>{{ poll ? poll.title : 'Голосование не найдено' }}</h2>
+    <h2>{{ poll ? poll.title : "Голосование не найдено" }}</h2>
 
-    <p v-if="poll && poll.isFinished" class="finished-message">Голосование завершено</p>
-    <p v-else-if="hasVoted" class="voted-message">Вы уже приняли участие в этом голосовании</p>
-    <p v-else-if="!hasPermission" class="no-permission-message">Вы не можете принять участие в этом голосовании</p>
-    <p v-if="true == false && poll && poll.isPrivate && hasPermission
-        && !poll.isFinished && !hasVoted" class="tokens-available">
+    <p v-if="poll && poll.isFinished" class="finished-message">
+      Голосование завершено
+    </p>
+    <p v-else-if="hasVoted" class="voted-message">
+      Вы уже приняли участие в этом голосовании
+    </p>
+    <p v-else-if="!hasPermission" class="no-permission-message">
+      Вы не можете принять участие в этом голосовании
+    </p>
+    <p
+      v-if="
+        true == false &&
+        poll &&
+        poll.isPrivate &&
+        hasPermission &&
+        !poll.isFinished &&
+        !hasVoted
+      "
+      class="tokens-available"
+    >
       Вам доступно {{ poll.tokensAvailable }} токенов
     </p>
 
@@ -24,15 +39,18 @@
             :disabled="poll.isFinished || hasVoted || !hasPermission"
           />
           {{ option.option }}
-          <span 
-            class="vote-count" 
-            v-if="poll.privatePollStatus == 2 || poll.isPrivate == false">
+          <span
+            class="vote-count"
+            v-if="poll.privatePollStatus == 2 || poll.isPrivate == false"
+          >
             ({{ poll.votes[option.id] || 0 }} голосов)
           </span>
         </div>
 
         <input
-          v-if="poll.isPrivate && hasPermission && !poll.isFinished && !hasVoted"
+          v-if="
+            poll.isPrivate && hasPermission && !poll.isFinished && !hasVoted
+          "
           type="number"
           min="1"
           :max="poll.tokensAvailable"
@@ -43,44 +61,65 @@
         />
       </label>
     </div>
-    <button v-if="poll && poll.isPrivate && poll.privatePollStatus == 0
-      && this.walletStore
-      && this.walletStore.registred.includes(this.poll.pollId) == false" 
+    <button
+      v-if="
+        poll &&
+        poll.isPrivate &&
+        poll.privatePollStatus == 0 &&
+        this.walletStore &&
+        this.walletStore.registred.includes(this.poll.pollId) == false
+      "
       @click="register"
-      class="vote-button" >
+      class="vote-button"
+    >
       Зарегистрироваться
     </button>
-    <button v-if="poll && poll.isPrivate && poll.privatePollStatus == 0 && poll.isOwner" 
+    <button
+      v-if="
+        poll && poll.isPrivate && poll.privatePollStatus == 0 && poll.isOwner
+      "
       @click="completeRegistaration"
-      class="vote-button" >
+      class="vote-button"
+    >
       Завершить регистрацию
     </button>
     <button
-      v-if="poll && ((poll.isPrivate && poll.privatePollStatus == 1) || poll.isPrivate == false)"
+      v-if="
+        poll &&
+        ((poll.isPrivate && poll.privatePollStatus == 1) ||
+          poll.isPrivate == false)
+      "
       @click="submitVote"
-      :disabled="!selectedOptionId || poll?.isFinished || hasVoted || !hasPermission"
+      :disabled="
+        !selectedOptionId || poll?.isFinished || hasVoted || !hasPermission
+      "
       class="vote-button"
     >
       Проголосовать
     </button>
 
-    <button v-if="poll && poll.isOwner && !poll.isFinished" @click="endPoll" class="end-button">
+    <button
+      v-if="poll && poll.isOwner && !poll.isFinished"
+      @click="endPoll"
+      class="end-button"
+    >
       Завершить голосование
     </button>
 
-    <router-link to="/personal-account/polls" class="back-button">Вернуться к списку</router-link>
+    <router-link to="/personal-account/polls" class="back-button"
+      >Вернуться к списку</router-link
+    >
   </div>
 </template>
 
-
 <script>
-import { getPollDetails } from '../services/pollService';
-import { useWalletStore } from '../services/walletStore';
-import { sendTransaction, signData } from '../services/walletService';
-import forge from 'node-forge';
-import cryptoJS from 'crypto-js'
-import axios from 'axios';
-import { ec as EC } from 'elliptic';
+import { getPollDetails } from "../services/pollService";
+import { useWalletStore } from "../services/walletStore";
+import { sendTransaction, signData } from "../services/walletService";
+import forge from "node-forge";
+import cryptoJS from "crypto-js";
+import axios from "axios";
+import { ec as EC } from "elliptic";
 // import { groth16 } from 'snarkjs';
 
 export default {
@@ -99,7 +138,7 @@ export default {
       commitHex: "",
       nullifierHex: "",
       weight: 0,
-      merklePath: []
+      merklePath: [],
     };
   },
   async mounted() {
@@ -110,10 +149,10 @@ export default {
     async loadPoll() {
       const request = {
         Address: this.walletStore.credentials.address,
-        PollId: this.id
+        PollId: this.id,
       };
       this.poll = await getPollDetails(request);
-      this.hasPermission = this.poll.hasPermission
+      this.hasPermission = this.poll.hasPermission;
       // console.log("Голоса:", this.poll.votes);
       console.log(this.poll);
     },
@@ -125,9 +164,9 @@ export default {
       // if (this.poll.isPrivate)
       //   this.submitZKPVote();
       // else
-        this.submitUsualVote();
+      this.submitUsualVote();
     },
-    async submitUsualVote(){
+    async submitUsualVote() {
       if (!this.selectedOptionId) {
         alert(`Выберите вариант, за который будете голосовать!`);
         return;
@@ -138,7 +177,7 @@ export default {
 
         // 1. Преобразуем selectedOption в хэш (как число)
         const md = forge.md.sha256.create();
-        md.update(this.selectedOptionId, 'utf8');
+        md.update(this.selectedOptionId, "utf8");
         const mBytes = md.digest().getBytes();
         const m = new forge.jsbn.BigInteger(forge.util.bytesToHex(mBytes), 16);
         // 2. Параметры открытого ключа подписанта
@@ -153,7 +192,7 @@ export default {
             for (let i = 0; i < ba.length; i++) {
               ba[i] = bytes.charCodeAt(i);
             }
-          }
+          },
         };
         // Генерация случайного числа r, взаимно простого с n
         let r;
@@ -165,23 +204,30 @@ export default {
         const blinded = m.multiply(re).mod(n);
         const blindedHex = blinded.toString(16);
         console.log("blindedHex", blindedHex);
-        
+
         const signBlindedTransaction = {
           transactionType: 6,
           publicKey: keys.publicKey.toString(),
           fromAddress: this.walletStore.credentials.address.toString(),
-          signature: '',
+          signature: "",
           timestamp: new Date().toISOString(),
           pollId: this.poll.pollId,
-          blindedMessage: blindedHex
+          blindedMessage: blindedHex,
         };
 
         //получить анонимную подпись, разослепить и отправить анонимно голос.
         const rawData = `${signBlindedTransaction.publicKey}${signBlindedTransaction.fromAddress}${signBlindedTransaction.timestamp}${signBlindedTransaction.blindedMessage}${signBlindedTransaction.pollId}`;
-        signBlindedTransaction.signature = await signData(rawData, keys.privateKey);
-        const signedBlindedResponse = await sendTransaction("poll/sign-blinded", signBlindedTransaction);
+        signBlindedTransaction.signature = await signData(
+          rawData,
+          keys.privateKey
+        );
+        const signedBlindedResponse = await sendTransaction(
+          "poll/sign-blinded",
+          signBlindedTransaction
+        );
         console.log("SignedResponse", signedBlindedResponse.data);
-        const signedBlindedHex = signedBlindedResponse.data.payload.signedBlindedMessage;
+        const signedBlindedHex =
+          signedBlindedResponse.data.payload.signedBlindedMessage;
 
         console.log("signedBlindedHex", signedBlindedHex);
         console.log("r", r);
@@ -205,16 +251,18 @@ export default {
           optionId: this.selectedOptionId,
           tokens: this.poll.tokensAvailable,
           signedUnblinded: unblinded,
-          payload: signedBlindedResponse.data.payload
+          payload: signedBlindedResponse.data.payload,
         };
-        const voteResponse = await sendTransaction("poll/anonimus-vote", anonimusOption);
+        const voteResponse = await sendTransaction(
+          "poll/anonimus-vote",
+          anonimusOption
+        );
         console.log("VoteResponse", voteResponse);
 
         const voteKey = `voted_${this.walletStore.credentials.address}_${this.id}`;
         // localStorage.setItem(voteKey, "true");
         this.walletStore.voted.push(voteKey);
         this.hasVoted = true;
-
 
         if (this.poll.votes[this.selectedOptionId]) {
           this.poll.votes[this.selectedOptionId] += this.poll.tokensAvailable;
@@ -227,44 +275,54 @@ export default {
     },
     async submitZKPVote() {
       const secretHex = this.getOrCreateSecret();
-      const { commitHex, weight, merklePath } =
-        await axios.get(`http://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-path`, {
-              params:{ commit: this.commitHex }
-        }).then(r => r.data);
+      const { commitHex, weight, merklePath } = await axios
+        .get(
+          `http://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-path`,
+          {
+            params: { commit: this.commitHex },
+          }
+        )
+        .then((r) => r.data);
 
-      const nullifier = cryptoJS.SHA256(secretHex + this.poll.pollId).toString();
-      const selectedIndex = this.poll.options.findIndex(opt => opt.id === this.selectedOptionId);
-      const oneBasedChioce = selectedIndex + 1; 
+      const nullifier = cryptoJS
+        .SHA256(secretHex + this.poll.pollId)
+        .toString();
+      const selectedIndex = this.poll.options.findIndex(
+        (opt) => opt.id === this.selectedOptionId
+      );
+      const oneBasedChioce = selectedIndex + 1;
       const m = oneBasedChioce * weight;
 
       const gHex = this.poll.votingKeyPair.gHex;
       const hHex = this.poll.votingKeyPair.hHex;
 
-      const secp256k1 = new EC('secp256k1');
-      const g = secp256k1.keyFromPublic(gHex, 'hex').getPublic();  // G точка
-      const h = secp256k1.keyFromPublic(hHex, 'hex').getPublic();  // H = G^x
+      const secp256k1 = new EC("secp256k1");
+      const g = secp256k1.keyFromPublic(gHex, "hex").getPublic(); // G точка
+      const h = secp256k1.keyFromPublic(hHex, "hex").getPublic(); // H = G^x
 
-      const r = secp256k1.genKeyPair();           // случайный скаляр r
-      const rScalar = r.getPrivate();             // число r
-      const gr = g.mul(rScalar);                  // c1 = g^r
-      const hr = h.mul(rScalar);                  // h^r
-      const mPoint = g.mul(m);                    // m как точка: G * m
-      const c2 = hr.add(mPoint);                  // c2 = h^r + G*m
+      const r = secp256k1.genKeyPair(); // случайный скаляр r
+      const rScalar = r.getPrivate(); // число r
+      const gr = g.mul(rScalar); // c1 = g^r
+      const hr = h.mul(rScalar); // h^r
+      const mPoint = g.mul(m); // m как точка: G * m
+      const c2 = hr.add(mPoint); // c2 = h^r + G*m
 
-      const { c1Hex, c2Hex } =  {
-        c1Hex: gr.encodeCompressed('hex'),
-        c2Hex: c2.encodeCompressed('hex')
+      const { c1Hex, c2Hex } = {
+        c1Hex: gr.encodeCompressed("hex"),
+        c2Hex: c2.encodeCompressed("hex"),
       };
 
-
-      const leaf = await this.makeLeaf(this.walletStore.credentials.address.toString(), secretHex);
+      const leaf = await this.makeLeaf(
+        this.walletStore.credentials.address.toString(),
+        secretHex
+      );
       console.log("leaf", leaf);
       const decimalLeaf = this.hexToDecimalString(leaf);
       console.log("decimalLeaf", decimalLeaf);
       const leafBytes = this.hexToBytes(leaf);
       console.log("leafBytes", leafBytes);
       console.log("commitBytes", this.hexToBytes(commitHex));
-      console.log("weightBytes", this.int32ToUint64LittleEndianBytes(weight))
+      console.log("weightBytes", this.int32ToUint64LittleEndianBytes(weight));
 
       const inputMembership = {
         secret: this.hexToDecimalString(secretHex),
@@ -275,10 +333,15 @@ export default {
         commit: this.hexToDecimalString(commitHex),
         nullifier: this.hexToDecimalString(nullifier),
 
-        merklePath: merklePath.map(p => this.hexToDecimalString(p.siblingHex)),
-        merkleDirections: merklePath.map(p => (p.dir === "left" ? 0 : 1))
+        merklePath: merklePath.map((p) =>
+          this.hexToDecimalString(p.siblingHex)
+        ),
+        merkleDirections: merklePath.map((p) => (p.dir === "left" ? 0 : 1)),
       };
-      console.log("Input being passed to fullProve:", JSON.stringify(inputMembership, null, 2));
+      console.log(
+        "Input being passed to fullProve:",
+        JSON.stringify(inputMembership, null, 2)
+      );
       // const { proof: proofMembership, publicSignals } = await groth16.fullProve(
       //   inputMembership,
       //   "/zk/membership.wasm",
@@ -321,7 +384,6 @@ export default {
       //   proofVote
       // };
 
-
       console.log("selectedOptionId    :", this.selectedOptionId);
       console.log("selectedIndex       :", selectedIndex);
       console.log("oneBasedChioce      :", oneBasedChioce);
@@ -342,7 +404,10 @@ export default {
       console.log("c2                  :", c2);
       console.log("c1Hex               :", c1Hex);
       console.log("c2Hex               :", c2Hex);
-      console.log("address.toString()  :", this.walletStore.credentials.address.toString());
+      console.log(
+        "address.toString()  :",
+        this.walletStore.credentials.address.toString()
+      );
       console.log("inputMembership     :", inputMembership);
       // console.log("proofMembership     :", proofMembership);
       // console.log("publicSignals       :", publicSignals);
@@ -351,7 +416,6 @@ export default {
       // console.log("publicSignalsVote   :", publicSignalsVote);
       // console.log("proofTransaction    :", proofTransaction);
       console.log("merklePath", merklePath);
-
     },
     async submitZKPVote1() {
       // const secretHex = this.getOrCreateSecret();
@@ -366,39 +430,27 @@ export default {
       //   await axios.get(`http://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-path`, {
       //         params:{ commit: this.commitHex }
       //   }).then(r => r.data);
-      
       // const pollIdHex = this.poll.pollId.replace(/^0x/, "");
       // const nullifierHex = this.sha256Hex(secretHex + pollIdHex);
       // this.nullifierHex = "0x" + nullifierHex;
-
       // this.commitHex = commitHex;
       // this.weight = weight;
       // this.merklePath = merklePath;
-
       // const choiceId   = this.selectedOptionId;   // 0-based индекс варианта
       // const publicKey = this.poll.votingKeyPair;     // { g: "...", h: "..." }
-
       // const g = secp.ProjectivePoint.BASE;
       // const h = secp.ProjectivePoint.fromHex(publicKey.hHex);
-
-      
       // const kHex  = secp.utils.bytesToHex(secp.utils.randomPrivateKey());   // 64-hex
       // const kBig  = bigInt("0x" + kHex);                                    // native BigInt
-
       // const mBig  = bigInt(choiceId) * bigInt(weight);
-
       // const c1 = g.multiply(kBig);                        // g^k
       // const c2 = h.multiply(kBig).add(g.multiply(mBig));  // h^k · g^m
-
-
       // this.ciphertext = {
       //   c1: secp.utils.bytesToHex(c1.toRawBytes(true)),   // 66-символов
       //   c2: secp.utils.bytesToHex(c2.toRawBytes(true))
       // };
-
       // // сохраняем m строкой — понадобится в zk-схеме «ValidVote»
       // this.choiceTimesWeight = mBig.toString(10);
-
       // console.groupCollapsed("📊  ZKP-vote debug");
       // console.log("secretHex      (%d) :", secretHex.length, secretHex);
       // console.log("nullifierHex   (%d) :", this.nullifierHex.length, this.nullifierHex);
@@ -411,9 +463,6 @@ export default {
       // console.log("cipher.c1     (%d) :", this.ciphertext.c1.length, this.ciphertext.c1.slice(0,10) + "…");
       // console.log("cipher.c2     (%d) :", this.ciphertext.c2.length, this.ciphertext.c2.slice(0,10) + "…");
       // console.groupEnd();
-
-
-
     },
     hexToDecimalString(hex) {
       return new forge.jsbn.BigInteger(hex, 16).toString(10);
@@ -421,47 +470,60 @@ export default {
     pointToDecimalXY(point) {
       return {
         x: point.getX().toString(10),
-        y: point.getY().toString(10)
+        y: point.getY().toString(10),
       };
     },
     async register() {
       const keys = this.walletStore.getKeyes();
       const secretHex = this.getOrCreateSecret();
-      const leafHex = await this.makeLeaf(this.walletStore.credentials.address.toString(), secretHex);
+      const leafHex = await this.makeLeaf(
+        this.walletStore.credentials.address.toString(),
+        secretHex
+      );
       const confirmParticipationTransaction = {
-          transactionType: 8,
-          publicKey: keys.publicKey.toString(),
-          fromAddress: this.walletStore.credentials.address.toString(),
-          signature: '',
-          timestamp: new Date().toISOString(),
-          pollId: this.poll.pollId,
-          leaf: leafHex
+        transactionType: 8,
+        publicKey: keys.publicKey.toString(),
+        fromAddress: this.walletStore.credentials.address.toString(),
+        signature: "",
+        timestamp: new Date().toISOString(),
+        pollId: this.poll.pollId,
+        leaf: leafHex,
       };
       const rawData = `${confirmParticipationTransaction.publicKey}${confirmParticipationTransaction.fromAddress}${confirmParticipationTransaction.timestamp}${confirmParticipationTransaction.pollId}${confirmParticipationTransaction.leaf}`;
-      confirmParticipationTransaction.signature = await signData(rawData, keys.privateKey);
-      const response = await sendTransaction("poll/confirm-registration", confirmParticipationTransaction);
+      confirmParticipationTransaction.signature = await signData(
+        rawData,
+        keys.privateKey
+      );
+      const response = await sendTransaction(
+        "poll/confirm-registration",
+        confirmParticipationTransaction
+      );
       this.commitHex = response.data.commitHex;
       this.walletStore.registred.push(this.poll.pollId);
       console.log(response);
     },
-    async completeRegistaration() {      
+    async completeRegistaration() {
       const keys = this.walletStore.getKeyes();
       const completeRegistration = {
-          transactionType: 9,
-          publicKey: keys.publicKey.toString(),
-          fromAddress: this.walletStore.credentials.address.toString(),
-          signature: '',
-          timestamp: new Date().toISOString(),
-          pollId: this.poll.pollId,
+        transactionType: 9,
+        publicKey: keys.publicKey.toString(),
+        fromAddress: this.walletStore.credentials.address.toString(),
+        signature: "",
+        timestamp: new Date().toISOString(),
+        pollId: this.poll.pollId,
       };
       const rawData = `${completeRegistration.publicKey}${completeRegistration.fromAddress}${completeRegistration.timestamp}${completeRegistration.pollId}`;
       completeRegistration.signature = await signData(rawData, keys.privateKey);
-      const response = await sendTransaction("poll/finish-registration", completeRegistration);
+      const response = await sendTransaction(
+        "poll/finish-registration",
+        completeRegistration
+      );
       console.log(response);
     },
     sha256Hex(strUtf8) {
-      return cryptoJS.SHA256(cryptoJS.enc.Utf8.parse(strUtf8))
-                    .toString(cryptoJS.enc.Hex);      // 64-симв hex
+      return cryptoJS
+        .SHA256(cryptoJS.enc.Utf8.parse(strUtf8))
+        .toString(cryptoJS.enc.Hex); // 64-симв hex
     },
     hexToBytes(hex) {
       const bytes = [];
@@ -472,10 +534,13 @@ export default {
     },
     int32ToUint64LittleEndianBytes(weight) {
       const bytes = new Uint8Array(8);
-      const w = forge.jsbn.BigInteger.asUintN(64, forge.jsbn.BigInteger(weight)); // расширяем до 64 бит без знака
+      const w = forge.jsbn.BigInteger.asUintN(
+        64,
+        forge.jsbn.BigInteger(weight)
+      ); // расширяем до 64 бит без знака
 
       for (let i = 0; i < 8; i++) {
-        bytes[i] = Number((w >> forge.jsbn.BigInteger(i * 8)) & 0xFFn);
+        bytes[i] = Number((w >> forge.jsbn.BigInteger(i * 8)) & 0xffn);
       }
 
       return Array.from(bytes); // возвращаем как обычный массив JS чисел
@@ -487,15 +552,15 @@ export default {
         hex = wa.toString(cryptoJS.enc.Hex);
         localStorage.setItem("zkpSecret", hex);
       }
-      return hex;                                   // 64-симв. hex-строка
+      return hex; // 64-симв. hex-строка
     },
     makeLeaf(addrString, secretHex) {
-      const addrWA   = cryptoJS.enc.Utf8.parse(addrString);     // WordArray
-      const secretWA = cryptoJS.enc.Hex.parse(secretHex);       // WordArray
-      const allWA    = addrWA.concat(secretWA);                 // склейка
+      const addrWA = cryptoJS.enc.Utf8.parse(addrString); // WordArray
+      const secretWA = cryptoJS.enc.Hex.parse(secretHex); // WordArray
+      const allWA = addrWA.concat(secretWA); // склейка
 
-      const digest   = cryptoJS.SHA256(allWA);                  // SHA-256
-      return digest.toString(cryptoJS.enc.Hex);                 // hex-строка
+      const digest = cryptoJS.SHA256(allWA); // SHA-256
+      return digest.toString(cryptoJS.enc.Hex); // hex-строка
     },
     async endPoll() {
       const keys = this.walletStore.getKeyes();
@@ -503,19 +568,19 @@ export default {
         transactionType: 5,
         publicKey: keys.publicKey.toString(),
         fromAddress: this.walletStore.credentials.address.toString(),
-        signature: '',
+        signature: "",
         timestamp: new Date().toISOString(),
-        pollId: this.poll.pollId
+        pollId: this.poll.pollId,
       };
       const rawData = `${transactionData.publicKey}${transactionData.fromAddress}${transactionData.timestamp}${transactionData.pollId}`;
       transactionData.signature = await signData(rawData, keys.privateKey);
       await sendTransaction("poll/finish-poll", transactionData);
 
       console.log("Транзакция успешно отправлена.");
-      
+
       this.poll.isFinished = true;
-    }
-  }
+    },
+  },
 };
 </script>
 <style scoped>
@@ -555,13 +620,13 @@ h2 {
   font-size: 22px;
 }
 
-.finished-message, .voted-message {
+.finished-message,
+.voted-message {
   color: #dc3545;
   font-size: 18px;
   font-weight: bold;
   margin: 15px 0;
 }
-
 
 .options {
   display: flex;
@@ -596,19 +661,17 @@ input[type="radio"] {
   margin-right: 10px;
 }
 
-
 button {
   display: block;
   width: 100%;
   padding: 12px;
-  margin-top: 10px; 
+  margin-top: 10px;
   border: none;
   border-radius: 8px;
   font-size: 16px;
   cursor: pointer;
   transition: all 0.3s ease-in-out;
 }
-
 
 .vote-button {
   background: #007bff;
@@ -637,7 +700,6 @@ button {
   background: #a71d2a;
 }
 
-
 .back-button {
   display: block;
   margin-top: 15px;
@@ -649,5 +711,4 @@ button {
 .back-button:hover {
   text-decoration: underline;
 }
-
 </style>

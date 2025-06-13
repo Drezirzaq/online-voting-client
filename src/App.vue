@@ -3,6 +3,7 @@
     <nav>
       <router-link to="/node-status">Статус</router-link>
       <router-link to="/personal-account">Личный кабинет</router-link>
+      <router-link to="/proof-demo">Proof Demo</router-link>
     </nav>
     <router-view />
   </div>
