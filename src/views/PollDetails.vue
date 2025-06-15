@@ -116,11 +116,15 @@
 import { getPollDetails } from "../services/pollService";
 import { useWalletStore } from "../services/walletStore";
 import { sendTransaction, signData } from "../services/walletService";
+import { toBig, encrypt, babyjub } from "../services/zkSnarksService";
+import { buildPoseidon } from "circomlibjs";
 import forge from "node-forge";
 import cryptoJS from "crypto-js";
 import axios from "axios";
-import { ec as EC } from "elliptic";
-// import { groth16 } from 'snarkjs';
+import { groth16 } from "snarkjs";
+import { ref } from "vue";
+
+// import { ec as EC } from "elliptic";
 
 export default {
   props: ["id"],
@@ -161,10 +165,9 @@ export default {
       this.hasVoted = this.walletStore.voted.includes(voteKey) === true;
     },
     async submitVote() {
-      // if (this.poll.isPrivate)
-      //   this.submitZKPVote();
+      if (this.poll.isPrivate) this.submitZKPVote();
       // else
-      this.submitUsualVote();
+      // this.submitZKPVote();
     },
     async submitUsualVote() {
       if (!this.selectedOptionId) {
@@ -274,195 +277,182 @@ export default {
       }
     },
     async submitZKPVote() {
-      const secretHex = this.getOrCreateSecret();
-      const { commitHex, weight, merklePath } = await axios
+      const secret = localStorage.getItem("secret");
+      const weight = localStorage.getItem("weight");
+      if (secret === undefined || secret === "") {
+        console.log("Secret not found");
+        return;
+      }
+      if (weight === undefined || weight === "") {
+        console.log("Weight not found");
+        return;
+      }
+
+      const poseidon = await buildPoseidon();
+      const poseidonField = poseidon.F;
+      const sh = poseidonField.toString(poseidon([secret]));
+      const commit = poseidonField.toString(poseidon([sh, weight.toString()]));
+
+      const { siblings, merklePath, root, pk_x, pk_y } = await axios
         .get(
-          `http://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-path`,
+          `https://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-tree-data`,
           {
-            params: { commit: this.commitHex },
+            params: { commit },
           }
         )
         .then((r) => r.data);
 
-      const nullifier = cryptoJS
-        .SHA256(secretHex + this.poll.pollId)
-        .toString();
-      const selectedIndex = this.poll.options.findIndex(
-        (opt) => opt.id === this.selectedOptionId
+      const optionId = this.poll.options.findIndex(
+        (o) => o.id === this.selectedOptionId
       );
-      const oneBasedChioce = selectedIndex + 1;
-      const m = oneBasedChioce * weight;
-
-      const gHex = this.poll.votingKeyPair.gHex;
-      const hHex = this.poll.votingKeyPair.hHex;
-
-      const secp256k1 = new EC("secp256k1");
-      const g = secp256k1.keyFromPublic(gHex, "hex").getPublic(); // G точка
-      const h = secp256k1.keyFromPublic(hHex, "hex").getPublic(); // H = G^x
-
-      const r = secp256k1.genKeyPair(); // случайный скаляр r
-      const rScalar = r.getPrivate(); // число r
-      const gr = g.mul(rScalar); // c1 = g^r
-      const hr = h.mul(rScalar); // h^r
-      const mPoint = g.mul(m); // m как точка: G * m
-      const c2 = hr.add(mPoint); // c2 = h^r + G*m
-
-      const { c1Hex, c2Hex } = {
-        c1Hex: gr.encodeCompressed("hex"),
-        c2Hex: c2.encodeCompressed("hex"),
-      };
-
-      const leaf = await this.makeLeaf(
-        this.walletStore.credentials.address.toString(),
-        secretHex
+      const pollId = this.poll.pollId;
+      const weightHash = poseidonField.toString(poseidon([weight]));
+      const nullifier = poseidonField.toString(poseidon([commit, pollId]));
+      const optionSecretHash = poseidonField.toString(
+        poseidon([optionId, secret])
       );
-      console.log("leaf", leaf);
-      const decimalLeaf = this.hexToDecimalString(leaf);
-      console.log("decimalLeaf", decimalLeaf);
-      const leafBytes = this.hexToBytes(leaf);
-      console.log("leafBytes", leafBytes);
-      console.log("commitBytes", this.hexToBytes(commitHex));
-      console.log("weightBytes", this.int32ToUint64LittleEndianBytes(weight));
+      const pk = [
+        babyjub.F.e(window.BigInt(pk_x)),
+        babyjub.F.e(window.BigInt(pk_y)),
+      ];
+      const { C1, C2, k } = encrypt(pk, window.BigInt(weight));
+      console.log("C1", C1);
+      console.log("C2", C2);
 
-      const inputMembership = {
-        secret: this.hexToDecimalString(secretHex),
-        pollId: this.hexToDecimalString(this.poll.pollId),
+      const membershipInput = {
+        root,
+        pathElements: siblings,
+        pathIndices: merklePath,
+        nullifier,
+        secret: secret.toString(),
+        pollId,
         weight: weight.toString(),
-
-        leaf: decimalLeaf, // из твоей функции
-        commit: this.hexToDecimalString(commitHex),
-        nullifier: this.hexToDecimalString(nullifier),
-
-        merklePath: merklePath.map((p) =>
-          this.hexToDecimalString(p.siblingHex)
-        ),
-        merkleDirections: merklePath.map((p) => (p.dir === "left" ? 0 : 1)),
+        weightHash,
+        commit,
+        optionId: optionId.toString(),
+        optionSecretHash,
       };
-      console.log(
-        "Input being passed to fullProve:",
-        JSON.stringify(inputMembership, null, 2)
+
+      const voteInput = {
+        C1x: toBig(C1[0]).toString(),
+        C1y: toBig(C1[1]).toString(),
+        C2x: toBig(C2[0]).toString(),
+        C2y: toBig(C2[1]).toString(),
+        PubX: toBig(pk[0]).toString(),
+        PubY: toBig(pk[1]).toString(),
+        k: k.toString(),
+        m: weight.toString(),
+      };
+
+      const membershipWasm = "/circom/PoseidonCheck_js/PoseidonCheck.wasm";
+      const membershipZkey = "/circom/PoseidonCheck.zkey";
+      const membershipVkey = ref(null);
+      membershipVkey.value = await fetch(
+        "/circom/PoseidonCheck.vkey.json"
+      ).then((r) => r.json());
+
+      const voteWasm = "/circom/ElGamalCheck_js/ElGamalCheck.wasm";
+      const voteZkey = "/circom/ElGamalCheck.zkey";
+      const voteVkey = ref(null);
+      voteVkey.value = await fetch("/circom/ElGamalCheck.vkey.json").then((r) =>
+        r.json()
       );
-      // const { proof: proofMembership, publicSignals } = await groth16.fullProve(
-      //   inputMembership,
-      //   "/zk/membership.wasm",
-      //   "/zk/membership.zkey"
+
+      const { proof: membershipProof, publicSignals: membershipSignals } =
+        await groth16.fullProve(
+          membershipInput,
+          membershipWasm,
+          membershipZkey
+        );
+
+      const { proof: voteProof, publicSignals: voteSignals } =
+        await groth16.fullProve(voteInput, voteWasm, voteZkey);
+
+      const membershipVerified = await groth16.verify(
+        membershipVkey.value,
+        membershipSignals,
+        membershipProof
+      );
+      console.log(membershipProof);
+      const voteVerified = await groth16.verify(
+        voteVkey.value,
+        voteSignals,
+        voteProof
+      );
+      if (membershipVerified == false || voteVerified == false) {
+        throw "Unable to verify local";
+      } else {
+        console.log("Both checks are valid");
+      }
+
+      const proof = {
+        membershipProof,
+        membershipSignals,
+        voteProof,
+        voteSignals,
+        nullifier,
+        pollId,
+        weightHash,
+        root,
+        optionId,
+        C1x: toBig(C1[0]).toString(),
+        C1y: toBig(C1[1]).toString(),
+        C2x: toBig(C2[0]).toString(),
+        C2y: toBig(C2[1]).toString(),
+      };
+
+      await sendTransaction("poll/anonimus-vote", proof);
+
+      // const nullifier = cryptoJS
+      //   .SHA256(secretHex + this.poll.pollId)
+      //   .toString();
+      // const selectedIndex = this.poll.options.findIndex(
+      //   (opt) => opt.id === this.selectedOptionId
       // );
-
-      // const gXY = this.pointToDecimalXY(g);
-      // const hXY = this.pointToDecimalXY(h);
-      // const c1XY = this.pointToDecimalXY(gr);  // g^r
-      // const c2XY = this.pointToDecimalXY(c2);  // h^r + g^m
-
-      // const inputVote = {
-      //   gX: gXY.x,
-      //   gY: gXY.y,
-      //   hX: hXY.x,
-      //   hY: hXY.y,
-      //   c1X: c1XY.x,
-      //   c1Y: c1XY.y,
-      //   c2X: c2XY.x,
-      //   c2Y: c2XY.y,
-      //   r: rScalar.toString(10),               // r как decimal
-      //   choice: oneBasedChioce.toString(),     // выбор: 1, 2, 3, ...
-      //   weight: weight.toString()              // вес
+      // const oneBasedChioce = selectedIndex + 1;
+      // const m = oneBasedChioce * weight;
+      // const gHex = this.poll.votingKeyPair.gHex;
+      // const hHex = this.poll.votingKeyPair.hHex;
+      // const secp256k1 = new EC("secp256k1");
+      // const g = secp256k1.keyFromPublic(gHex, "hex").getPublic(); // G точка
+      // const h = secp256k1.keyFromPublic(hHex, "hex").getPublic(); // H = G^x
+      // const r = secp256k1.genKeyPair(); // случайный скаляр r
+      // const rScalar = r.getPrivate(); // число r
+      // const gr = g.mul(rScalar); // c1 = g^r
+      // const hr = h.mul(rScalar); // h^r
+      // const mPoint = g.mul(m); // m как точка: G * m
+      // const c2 = hr.add(mPoint); // c2 = h^r + G*m
+      // const { c1Hex, c2Hex } = {
+      //   c1Hex: gr.encodeCompressed("hex"),
+      //   c2Hex: c2.encodeCompressed("hex"),
       // };
-
-      // const { proof: proofVote, publicSignals: publicSignalsVote } = await groth16.fullProve(
-      //   inputVote,
-      //   "/zk/vote.wasm",
-      //   "/zk/vote.zkey"
+      // const leaf = await this.makeLeaf(
+      //   this.walletStore.credentials.address.toString(),
+      //   secretHex
       // );
-
-      // const proofTransaction = {
-      //   pollId: this.poll.pollId,
+      // console.log("leaf", leaf);
+      // const decimalLeaf = this.hexToDecimalString(leaf);
+      // console.log("decimalLeaf", decimalLeaf);
+      // const leafBytes = this.hexToBytes(leaf);
+      // console.log("leafBytes", leafBytes);
+      // console.log("commitBytes", this.hexToBytes(commitHex));
+      // console.log("weightBytes", this.int32ToUint64LittleEndianBytes(weight));
+      // const inputMembership = {
+      //   secret: this.hexToDecimalString(secretHex),
+      //   pollId: this.hexToDecimalString(this.poll.pollId),
+      //   weight: weight.toString(),
+      //   leaf: decimalLeaf, // из твоей функции
+      //   commit: this.hexToDecimalString(commitHex),
       //   nullifier: this.hexToDecimalString(nullifier),
-      //   ciphertext: {
-      //     c1: c1Hex,
-      //     c2: c2Hex
-      //   },
-      //   proofMembership,
-      //   proofVote
+      //   merklePath: merklePath.map((p) =>
+      //     this.hexToDecimalString(p.siblingHex)
+      //   ),
+      //   merkleDirections: merklePath.map((p) => (p.dir === "left" ? 0 : 1)),
       // };
-
-      console.log("selectedOptionId    :", this.selectedOptionId);
-      console.log("selectedIndex       :", selectedIndex);
-      console.log("oneBasedChioce      :", oneBasedChioce);
-      console.log("secretHex      (%d) :", secretHex.length, secretHex);
-      console.log("commitHex      (%d) :", commitHex.length, commitHex);
-      console.log("weight              :", weight);
-      console.log("nullifier           :", nullifier);
-      console.log("m                   :", m);
-      console.log("gHex                :", gHex);
-      console.log("hHex                :", hHex);
-      console.log("g                   :", g);
-      console.log("h                   :", h);
-      console.log("r                   :", r);
-      console.log("rScalar             :", rScalar);
-      console.log("gr                  :", gr);
-      console.log("hr                  :", hr);
-      console.log("mPoint              :", mPoint);
-      console.log("c2                  :", c2);
-      console.log("c1Hex               :", c1Hex);
-      console.log("c2Hex               :", c2Hex);
-      console.log(
-        "address.toString()  :",
-        this.walletStore.credentials.address.toString()
-      );
-      console.log("inputMembership     :", inputMembership);
-      // console.log("proofMembership     :", proofMembership);
-      // console.log("publicSignals       :", publicSignals);
-      // console.log("inputVote           :", inputVote);
-      // console.log("proofVote           :", proofVote);
-      // console.log("publicSignalsVote   :", publicSignalsVote);
-      // console.log("proofTransaction    :", proofTransaction);
-      console.log("merklePath", merklePath);
-    },
-    async submitZKPVote1() {
-      // const secretHex = this.getOrCreateSecret();
-      // if (!secretHex)
-      //   throw "not registered in this poll on this device";
-      // if (!this.commitHex)
-      // {
-      //   console.error("no commitHex");
-      //   return;
-      // }
-      // const { commitHex, weight, merklePath } =
-      //   await axios.get(`http://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-path`, {
-      //         params:{ commit: this.commitHex }
-      //   }).then(r => r.data);
-      // const pollIdHex = this.poll.pollId.replace(/^0x/, "");
-      // const nullifierHex = this.sha256Hex(secretHex + pollIdHex);
-      // this.nullifierHex = "0x" + nullifierHex;
-      // this.commitHex = commitHex;
-      // this.weight = weight;
-      // this.merklePath = merklePath;
-      // const choiceId   = this.selectedOptionId;   // 0-based индекс варианта
-      // const publicKey = this.poll.votingKeyPair;     // { g: "...", h: "..." }
-      // const g = secp.ProjectivePoint.BASE;
-      // const h = secp.ProjectivePoint.fromHex(publicKey.hHex);
-      // const kHex  = secp.utils.bytesToHex(secp.utils.randomPrivateKey());   // 64-hex
-      // const kBig  = bigInt("0x" + kHex);                                    // native BigInt
-      // const mBig  = bigInt(choiceId) * bigInt(weight);
-      // const c1 = g.multiply(kBig);                        // g^k
-      // const c2 = h.multiply(kBig).add(g.multiply(mBig));  // h^k · g^m
-      // this.ciphertext = {
-      //   c1: secp.utils.bytesToHex(c1.toRawBytes(true)),   // 66-символов
-      //   c2: secp.utils.bytesToHex(c2.toRawBytes(true))
-      // };
-      // // сохраняем m строкой — понадобится в zk-схеме «ValidVote»
-      // this.choiceTimesWeight = mBig.toString(10);
-      // console.groupCollapsed("📊  ZKP-vote debug");
-      // console.log("secretHex      (%d) :", secretHex.length, secretHex);
-      // console.log("nullifierHex   (%d) :", this.nullifierHex.length, this.nullifierHex);
-      // console.log("commitHex      (%d) :", commitHex.length, commitHex);
-      // console.log("weight                :", weight);
-      // console.log("merklePath length     :", merklePath.length);
-      // console.log("choiceId              :", choiceId);
-      // console.log("m (choice×w)          :", this.choiceTimesWeight);
-      // console.log("kHex          (%d) :", kHex.length, kHex);
-      // console.log("cipher.c1     (%d) :", this.ciphertext.c1.length, this.ciphertext.c1.slice(0,10) + "…");
-      // console.log("cipher.c2     (%d) :", this.ciphertext.c2.length, this.ciphertext.c2.slice(0,10) + "…");
-      // console.groupEnd();
+      // console.log(
+      //   "Input being passed to fullProve:",
+      //   JSON.stringify(inputMembership, null, 2)
+      // );
     },
     hexToDecimalString(hex) {
       return new forge.jsbn.BigInteger(hex, 16).toString(10);
@@ -474,12 +464,12 @@ export default {
       };
     },
     async register() {
+      const poseidon = await buildPoseidon();
+      const F = poseidon.F;
+      var secret = this.randomBigInt();
+      localStorage.setItem("secret", secret.toString());
+      const sh = F.toString(poseidon([secret]));
       const keys = this.walletStore.getKeyes();
-      const secretHex = this.getOrCreateSecret();
-      const leafHex = await this.makeLeaf(
-        this.walletStore.credentials.address.toString(),
-        secretHex
-      );
       const confirmParticipationTransaction = {
         transactionType: 8,
         publicKey: keys.publicKey.toString(),
@@ -487,20 +477,26 @@ export default {
         signature: "",
         timestamp: new Date().toISOString(),
         pollId: this.poll.pollId,
-        leaf: leafHex,
+        sh,
       };
-      const rawData = `${confirmParticipationTransaction.publicKey}${confirmParticipationTransaction.fromAddress}${confirmParticipationTransaction.timestamp}${confirmParticipationTransaction.pollId}${confirmParticipationTransaction.leaf}`;
+      const rawData = `${confirmParticipationTransaction.publicKey}${confirmParticipationTransaction.fromAddress}${confirmParticipationTransaction.timestamp}${confirmParticipationTransaction.pollId}${confirmParticipationTransaction.sh}`;
       confirmParticipationTransaction.signature = await signData(
         rawData,
         keys.privateKey
       );
-      const response = await sendTransaction(
-        "poll/confirm-registration",
-        confirmParticipationTransaction
-      );
-      this.commitHex = response.data.commitHex;
-      this.walletStore.registred.push(this.poll.pollId);
-      console.log(response);
+      try {
+        const response = await sendTransaction(
+          "poll/confirm-registration",
+          confirmParticipationTransaction
+        );
+        if (response.status !== 200) throw "error";
+        console.log(response.data.weight);
+        localStorage.setItem("weight", response.data.weight);
+      } catch (err) {
+        console.log(err);
+        return;
+      }
+      console.log("registred");
     },
     async completeRegistaration() {
       const keys = this.walletStore.getKeyes();
@@ -519,6 +515,26 @@ export default {
         completeRegistration
       );
       console.log(response);
+    },
+    randomBigInt(bitLength = 256) {
+      if (bitLength % 8 !== 0) {
+        throw new Error("bitLength должен быть кратен 8");
+      }
+
+      const byteLength = bitLength / 8;
+      const randomBytes = new Uint8Array(byteLength);
+      crypto.getRandomValues(randomBytes);
+
+      // Устанавливаем старший бит, чтобы число точно было нужной длины
+      randomBytes[0] |= 0b10000000;
+
+      let hex =
+        "0x" +
+        Array.from(randomBytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+
+      return window.BigInt(hex);
     },
     sha256Hex(strUtf8) {
       return cryptoJS

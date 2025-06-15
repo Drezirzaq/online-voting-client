@@ -1,7 +1,8 @@
-// import { groth16 } from "snarkjs";
-// import { fileURLToPath } from "url";
 import { Buffer } from "buffer";
-// import path from "path";
+import { buildBabyjub } from "circomlibjs";
+
+export const babyjub = await buildBabyjub();
+const { F, subOrder, Base8: G } = babyjub;
 
 export function buildMerkleTree(leaves, poseidon) {
   const n = 1 << Math.ceil(Math.log2(leaves.length));
@@ -57,22 +58,43 @@ export function printMerkleProof(siblings, pathIndices) {
     );
   });
 }
-export async function CreateProof() {
-  //   const __filename = fileURLToPath(import.meta.url);
-  //   const __dirname = path.dirname(__filename);
-  //   const CIRCOM_DIR = path.join(__dirname, "circom");
-  //   const wasmPath = path.join(
-  //     CIRCOM_DIR,
-  //     "PoseidonCheck_js",
-  //     "PoseidonCheck.wasm"
-  //   );
-  //   const zkeyPath = path.join(CIRCOM_DIR, "PoseidonCheck.zkey");
-  //   const { proof, publicSignals } = await groth16.fullProve(
-  //     input,
-  //     wasmPath,
-  //     zkeyPath
-  //   );
-  //   return { proof, publicSignals };
+
+export function toBig(v) {
+  return typeof v === "bigint" ? v : F.toObject(v);
+}
+export function add(A, B) {
+  return babyjub.addPoint(A, B);
+}
+export function mul(P, s) {
+  return babyjub.mulPointEscalar(P, s);
+}
+export function encode(m) {
+  return mul(G, window.BigInt(m));
+}
+export function randScalar(limit = subOrder) {
+  let k;
+  do {
+    const buf = new Uint8Array(32);
+    crypto.getRandomValues(buf); // вместо Node-функции randomBytes
+
+    // превращаем байты в шестнадцатеричную строку той же формы, что и раньше
+    const hex = [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    // получаем BigInt
+    k = window.BigInt("0x" + hex); // формат идентичен Node-версии
+  } while (k === 0n || k >= limit);
+  return k;
+}
+export function encrypt(pk, weight) {
+  const M = encode(weight);
+
+  const k = randScalar();
+
+  return {
+    C1: mul(G, k),
+    C2: add(M, mul(pk, k)),
+    k,
+  };
 }
 function shortHex(u8) {
   const hex = Buffer.from(u8).toString("hex");
