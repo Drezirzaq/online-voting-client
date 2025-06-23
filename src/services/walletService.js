@@ -167,12 +167,10 @@ export function loginWallet(address, password) {
     throw new Error("Кошелек не найден. Сначала создайте кошелек.");
   }
 
-  // Проверяем, совпадает ли адрес
   if (savedAddress !== address) {
     throw new Error("Адрес кошелька не найден.");
   }
 
-  // Расшифровываем ключи
   const privateKey = decryptData(encryptedPrivateKey, password);
   const publicKey = decryptData(encryptedPublicKey, password);
 

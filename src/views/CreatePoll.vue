@@ -27,13 +27,11 @@
         </button>
       </div>
 
-      <!-- Приватность -->
       <label class="checkbox-field">
         <input type="checkbox" v-model="isPrivate" @change="onPrivacyChange" />
         <span class="checkbox-label">Закрытое голосование</span>
       </label>
 
-      <!-- Приглашённые -->
       <div v-if="isPrivate" class="invited-block">
         <label>Приглашённые пользователи</label>
         <div v-for="(user, idx) in invitedUsers" :key="idx" class="row">
@@ -64,7 +62,6 @@
         </button>
       </div>
 
-      <!-- Токены -->
       <label v-if="isPrivate" class="form-field">
         Количество токенов
         <input
@@ -76,13 +73,11 @@
         />
       </label>
 
-      <!-- Submit -->
       <button type="submit" class="btn primary w100" :disabled="loading">
         <span v-if="loading">Создаём…</span>
         <span v-else>Создать голосование</span>
       </button>
 
-      <!-- Сообщения -->
       <p v-if="error" class="error">{{ error }}</p>
     </form>
   </div>

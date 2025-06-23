@@ -116,16 +116,13 @@
           </div>
         </template>
 
-        <!-- ▸ Этап 2: дерево Merkle + ключи -->
         <template v-else-if="currentStage === 2">
-          <!-- SVG-визуализация дерева -->
           <MerkleTree
             :levels="merkleLevels"
             :proof="merklePath"
             :leaf-idx="leafIndex"
           />
 
-          <!-- Ключи BabyJubJub -->
           <div class="options-block" style="margin-top: 24px">
             <label>Ключи подписи (BabyJubJub)</label>
 
@@ -155,7 +152,6 @@
           </div>
         </template>
 
-        <!-- ▸ Этап 3: ввод pollId/weight + входы для доказательств -->
         <template v-else-if="currentStage === 3">
           <h3 class="title">Параметры голоса</h3>
 
@@ -300,7 +296,6 @@
         </template>
       </div>
 
-      <!-- точки + «Далее» -->
       <div class="stage-controls">
         <div class="stage-dots">
           <span
@@ -332,7 +327,7 @@ import { buildMerkleTree, getMerkleProof } from "@/services/zkSnarksService";
 import MerkleTree from "@/components/MerkleTree.vue";
 import { groth16 } from "snarkjs";
 import { toRaw } from "vue";
-/* -------------------- этапы -------------------- */
+
 const STAGE_MAX = 6;
 const currentStage = ref(1);
 const stageTitles = [
@@ -349,22 +344,20 @@ const clientData = reactive({});
 const serverData = reactive({});
 const generalData = reactive({});
 const dataSendedClosed = reactive({});
-/* ---------------- Stage 1 ---------------- */
-const users = ref([]); // коммиты пользователей
-const secret = ref(0n); // BigInt-секрет
-const secretString = ref(""); // строка секрета
+
+const users = ref([]);
+const secret = ref(0n);
+const secretString = ref("");
 const commit = ref("");
 
-/* ---------------- Merkle ---------------- */
-const merkleLevels = ref([]); // уровни дерева
-const merklePath = ref(null); // путь доказательства
+const merkleLevels = ref([]);
+const merklePath = ref(null);
 const leafIndex = ref(-1);
 
-/* ---------------- Keys (Stage 2) -------- */
-const babyjub = ref(null); // модуль babyjub
-const subOrder = ref(0n); // под-порядок
-const sk = ref(null); // секретный ключ
-const pk = ref([0n, 0n]); // публичный ключ
+const babyjub = ref(null);
+const subOrder = ref(0n);
+const sk = ref(null);
+const pk = ref([0n, 0n]);
 const keyPending = ref(false);
 
 const skString = computed(() => sk.value?.toString() || "");
@@ -383,7 +376,6 @@ const optionId = ref("0");
 const voteResults = ref(null);
 const isCalculating = ref(false);
 
-/* ---------------- Stage 3 ---------------- */
 const pollId = ref(0n);
 const weight = ref(1n);
 const optionIdString = computed({
@@ -451,41 +443,36 @@ const canVerify = computed(
     voteProof.value != null
 );
 
-/* ---------------- Poseidon ---------------- */
 const poseidon = ref(null);
 const F = ref(null);
 const FB = ref(null);
 const G = ref(null);
 let babyMap = ref(null);
 const SQRT_MMAX = 1n << 16n;
-/* ------------ инициализация -------------- */
+
 onMounted(async () => {
   try {
-    /* Poseidon */
     const p = await buildPoseidon();
     poseidon.value = p;
     F.value = p.F;
 
-    /* BabyJubJub */
     const bj = await buildBabyjub();
     babyjub.value = bj;
     subOrder.value = bj.subOrder;
     FB.value = bj.F;
     G.value = bj.Base8;
 
-    /* если уже на 2-м этапе → сразу ключи */
     if (currentStage.value === 2) generateKeys();
   } catch (err) {
     console.error("Init failed:", err);
   }
 });
 
-/* ---------------- helpers ---------------- */
 function randomBigInt(bits = 256) {
   const bytes = bits / 8;
   const buf = new Uint8Array(bytes);
   crypto.getRandomValues(buf);
-  buf[0] |= 0b10000000; // неотрицательность
+  buf[0] |= 0b10000000;
   return window.BigInt(
     "0x" + [...buf].map((b) => b.toString(16).padStart(2, "0")).join("")
   );
@@ -500,9 +487,8 @@ function addUser() {
   const user = { commit, optionId, weight };
   users.value.push(user);
 
-  // добавим в generalData строку формата: user0: commit: ..., optionId: ..., weight: ...
   const idx = users.value.length - 1;
-  const shortCommit = commit.slice(0, 6) + ".." + commit.slice(-2); // сокращение commit
+  const shortCommit = commit.slice(0, 6) + ".." + commit.slice(-2);
   generalData[
     "user" + idx
   ] = `commit: ${shortCommit}, optionId: ${optionId}, weight: ${weight}`;
@@ -511,10 +497,8 @@ function addUser() {
 function removeUser(i) {
   users.value.splice(i, 1);
 
-  // Удаляем строку user{i} из generalData
   delete generalData["user" + i];
 
-  // Обновляем индексы всех следующих пользователей
   for (let j = i; j < users.value.length; j++) {
     const user = users.value[j];
     const shortCommit = user.commit.slice(0, 6) + ".." + user.commit.slice(-2);
@@ -523,29 +507,23 @@ function removeUser(i) {
     ] = `commit: ${shortCommit}, optionId: ${user.optionId}, weight: ${user.weight}`;
   }
 
-  // Удаляем "висящий" последний ключ (если раньше был userN, а теперь пользователей меньше)
   delete generalData["user" + users.value.length];
 }
 
 function generateSecret() {
   if (!poseidon.value) return;
 
-  // 1. Генерация секрета
   secret.value = randomBigInt();
   secretString.value = secret.value.toString();
 
-  // 2. Хэш секрета
   const sh = F.value.toString(poseidon.value([secret.value]));
 
-  // 3. Коммит
   commit.value = F.value.toString(
     poseidon.value([sh, weight.value.toString()])
   );
 
-  // ⬇ Обновляем clientData
   clientData.secret = secretString.value;
 
-  // ⬇ Обновляем serverData
   serverData.weight = weightString.value;
   serverData.commit = commit.value;
   serverData.sh = sh;
@@ -566,10 +544,8 @@ function clearSecretAndCommit() {
   secretString.value = "";
   commit.value = "";
 
-  // Удаляем из clientData
   delete clientData.secret;
 
-  // Удаляем из serverData
   delete serverData.weight;
   delete serverData.commit;
   delete serverData.sh;
@@ -605,13 +581,11 @@ function randScalar(limit = subOrder.value) {
   let k;
   do {
     const buf = new Uint8Array(32);
-    crypto.getRandomValues(buf); // вместо Node-функции randomBytes
+    crypto.getRandomValues(buf);
 
-    // превращаем байты в шестнадцатеричную строку той же формы, что и раньше
     const hex = [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
 
-    // получаем BigInt
-    k = window.BigInt("0x" + hex); // формат идентичен Node-версии
+    k = window.BigInt("0x" + hex);
   } while (k === 0n || k >= limit);
   return k;
 }
@@ -628,7 +602,7 @@ function generateKeys() {
   try {
     const { sk: s, pk: p } = keyGen();
     sk.value = s;
-    pk.value = p; // p — массив [x, y]
+    pk.value = p;
     generalData.SK = s.toString();
     generalData.pkX = F.value.toString(p[0]);
     generalData.pkY = F.value.toString(p[1]);
@@ -640,12 +614,10 @@ function generateKeys() {
   }
 }
 
-/* ---------- переход между этапами -------- */
 function nextStage() {
   if (currentStage.value >= STAGE_MAX) return;
   currentStage.value += 1;
 
-  /* при входе на Этап 2 */
   if (currentStage.value === 2 && poseidon.value) {
     buildTreeAndProof();
     generateKeys();
@@ -661,17 +633,13 @@ function nextStage() {
 }
 
 function buildTreeAndProof() {
-  /* 1. коммиты → BigInt[] */
   const userLeaves = users.value.map((x) => F.value.e(x.commit));
 
-  /* 2. случайный индекс вставки commit */
   const shIdx = Math.floor(Math.random() * (userLeaves.length + 1));
 
-  /* 3. leaves с вставленным commit */
   const leaves = [...userLeaves];
   leaves.splice(shIdx, 0, F.value.e(commit.value || 0n));
 
-  /* 4. дополняем нулями Poseidon до 8 листьев */
   const zeroHash = poseidon.value([0n]);
   while (leaves.length < 8) leaves.push(zeroHash);
 
@@ -681,7 +649,6 @@ function buildTreeAndProof() {
   merklePath.value = getMerkleProof(merkleLevels.value, shIdx);
 }
 
-/* ----------- Stage-3 logic --------------- */
 function toStr(x) {
   return F.value.toString(x);
 }
@@ -850,7 +817,6 @@ async function calculateVotes() {
     const user = users.value[key];
     const { C1, C2 } = encrypt(pk.value, user.weight);
 
-    // Инициализируем массив, если его ещё нет
     if (!transformed[user.optionId]) {
       transformed[user.optionId] = [];
     }
@@ -877,14 +843,14 @@ async function calculateVotes() {
 function aggregateCiphertexts(ciphertexts) {
   return ciphertexts.reduce(
     (agg, { C1, C2 }) => ({
-      C1: addPoints(agg.C1, C1), // суммируем C1
-      C2: addPoints(agg.C2, C2), // суммируем C2
+      C1: addPoints(agg.C1, C1),
+      C2: addPoints(agg.C2, C2),
     }),
-    { C1: encode(0n), C2: encode(0n) } // нейтральная точка
+    { C1: encode(0n), C2: encode(0n) }
   );
 }
 function decrypt(sk, C1, C2) {
-  const M = addPoints(C2, neg(mul(C1, sk))); // M = C2 − sk·C1 = m·G
+  const M = addPoints(C2, neg(mul(C1, sk)));
   return bsgs(M);
 }
 function neg([x, y]) {
@@ -893,39 +859,36 @@ function neg([x, y]) {
 function bsgs(point) {
   buildBabyTable();
   const m = SQRT_MMAX;
-  const step = neg(encode(m)); // −m·G
+  const step = neg(encode(m));
   let gamma = point;
   for (let i = 0n; i < m; i++) {
     const key = gamma[0].toString() + "," + gamma[1].toString();
     const j = babyMap.value.get(key);
-    if (j !== undefined) return i * m + j; // вес найден
+    if (j !== undefined) return i * m + j;
     gamma = addPoints(gamma, step);
   }
   throw new Error("BSGS: логарифм не найден — возможно, вес > 2^32−1");
 }
 function buildBabyTable() {
-  if (babyMap.value) return; // уже построена
+  if (babyMap.value) return;
   console.time("[BSGS] baby‑steps");
   babyMap.value = new Map();
   let P = encode(0n);
   for (let j = 0n; j < SQRT_MMAX; j++) {
     babyMap.value.set(P[0].toString() + "," + P[1].toString(), j);
-    P = addPoints(P, G.value); // P ← P + G (дешевле, чем 65k.mul)
+    P = addPoints(P, G.value);
   }
   console.timeEnd("[BSGS] baby‑steps");
 }
 </script>
 
 <style scoped>
-/* (CSS точно такой же, как в предыдущей версии) */
-
 .proof-demo {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-/* данные клиента/сервера */
 .data-bar {
   display: flex;
   gap: 16px;
@@ -948,13 +911,11 @@ function buildBabyTable() {
   padding: 8px;
   font-size: 13px;
 
-  /* новые свойства */
-  white-space: nowrap; /* не переносить строки */
-  overflow: hidden; /* скрыть выходящее */
-  text-overflow: ellipsis; /* добавить троеточие */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* карточка */
 .poll-container {
   width: 480px;
   max-width: 95%;
@@ -972,7 +933,6 @@ function buildBabyTable() {
   min-height: 120px;
 }
 
-/* точки + кнопка */
 .stage-controls {
   display: flex;
   flex-direction: column;
@@ -999,7 +959,6 @@ function buildBabyTable() {
   width: 160px;
 }
 
-/* кнопки / ряды / стили */
 .btn {
   padding: 10px 16px;
   border: none;
@@ -1117,21 +1076,19 @@ function buildBabyTable() {
   border: 1px solid #ccc;
   border-radius: 5px;
 
-  /* Добавь вот это ↓ */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .narrow-input {
-  width: 60px; /* было 20px — очень мало */
+  width: 60px;
   padding: 6px;
   font-size: 14px;
   border: 1px solid #ccc;
   border-radius: 5px;
   background: #fff;
 
-  /* Чтобы был обрезанный текст, если вдруг длинный */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

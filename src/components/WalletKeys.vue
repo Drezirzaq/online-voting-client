@@ -7,7 +7,7 @@
 
 <script>
 export default {
-  name: 'WalletKeys',
+  name: "WalletKeys",
   props: {
     publicKey: {
       type: String,
@@ -20,7 +20,3 @@ export default {
   },
 };
 </script>
-
-<style scoped>
-/* Стили для ключей, если нужно */
-</style>

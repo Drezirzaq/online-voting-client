@@ -2,7 +2,6 @@
   <div class="poll-details">
     <h2>{{ poll ? poll.title : "Голосование не найдено" }}</h2>
 
-    <!-- Информационный блок -->
     <div class="info-messages">
       <p v-if="pollWeight" class="info-message">
         Вес вашего голоса: <strong>{{ pollWeight }}</strong>
@@ -109,7 +108,6 @@
       Вернуться к списку
     </router-link>
 
-    <!-- Общий вывод ошибок в самом низу -->
     <p v-if="errorMessage" class="error-message">
       {{ errorMessage }}
     </p>
@@ -581,7 +579,6 @@ h2 {
   margin: 15px 0;
 }
 
-/* Стили для ошибок */
 .error-message {
   color: #dc3545;
   font-size: 16px;

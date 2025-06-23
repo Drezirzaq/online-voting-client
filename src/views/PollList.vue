@@ -2,11 +2,9 @@
   <div class="poll-list">
     <h2>Доступные голосования</h2>
 
-    <!-- состояния загрузки / ошибки -->
     <p v-if="error" class="error">{{ error }}</p>
     <p v-else-if="loading" class="loading">Загрузка…</p>
 
-    <!-- колонки показываем только когда данные есть и ошибок нет -->
     <div v-else class="poll-columns">
       <div class="poll-column">
         <h3>Активные</h3>

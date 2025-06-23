@@ -117,10 +117,8 @@ const sendAmount = ref(null);
 const sending = ref(false);
 const txError = ref(null);
 
-// —————————————————————————— Computed
 const fullAddress = computed(() => walletStore.credentials.address || "");
 
-// —————————————————————————— Methods
 async function getBalance() {
   try {
     loadingBalance.value = true;

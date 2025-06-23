@@ -76,13 +76,11 @@ export function randScalar(limit = subOrder) {
   let k;
   do {
     const buf = new Uint8Array(32);
-    crypto.getRandomValues(buf); // вместо Node-функции randomBytes
+    crypto.getRandomValues(buf);
 
-    // превращаем байты в шестнадцатеричную строку той же формы, что и раньше
     const hex = [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
 
-    // получаем BigInt
-    k = window.BigInt("0x" + hex); // формат идентичен Node-версии
+    k = window.BigInt("0x" + hex);
   } while (k === 0n || k >= limit);
   return k;
 }
