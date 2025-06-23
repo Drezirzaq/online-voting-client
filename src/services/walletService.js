@@ -8,7 +8,15 @@ export async function sendTransaction(path, transaction) {
     const response = await axios.post(`${API_BASE_URL}/${path}`, transaction);
     return response;
   } catch (error) {
-    throw new Error(`Ошибка при отправке транзакции: ${error}`);
+    throw new Error(error.data);
+  }
+}
+export async function getAddresses() {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/wallet/addresses`);
+    return response;
+  } catch (error) {
+    throw new Error(`Ошибка при попытке получить адреса: ${error}`);
   }
 }
 
@@ -140,15 +148,6 @@ export async function createWallet(password) {
   const encryptedPrivateKey = encryptData(privateKey, password);
   const encryptedPublicKey = encryptData(publicKey, password);
   walletStore.setKeys(encryptedPublicKey, encryptedPrivateKey);
-
-  // localStorage.setItem('walletAddress', address);
-  // localStorage.setItem('encryptedPrivateKey', encryptedPrivateKey);
-  // localStorage.setItem('encryptedPublicKey', encryptedPublicKey);
-
-  console.log("Кошелек создан и сохранен в localStorage:");
-  console.log("Адрес:", address);
-  console.log("Зашифрованный приватный ключ:", encryptedPrivateKey);
-  console.log("Зашифрованный публичный ключ:", encryptedPublicKey);
 
   return {
     address,

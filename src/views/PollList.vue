@@ -2,12 +2,20 @@
   <div class="poll-list">
     <h2>Доступные голосования</h2>
 
-    <div class="poll-columns">
+    <!-- состояния загрузки / ошибки -->
+    <p v-if="error" class="error">{{ error }}</p>
+    <p v-else-if="loading" class="loading">Загрузка…</p>
+
+    <!-- колонки показываем только когда данные есть и ошибок нет -->
+    <div v-else class="poll-columns">
       <div class="poll-column">
         <h3>Активные</h3>
         <ul v-if="activePolls.length">
           <li v-for="poll in activePolls" :key="poll.pollId">
-            <router-link :to="'/personal-account/polls/' + poll.pollId" class="poll-link">
+            <router-link
+              :to="'/personal-account/polls/' + poll.pollId"
+              class="poll-link"
+            >
               <span v-if="poll.isPrivate" class="lock-icon">🔒</span>
               {{ poll.title }}
             </router-link>
@@ -20,7 +28,10 @@
         <h3>Завершённые</h3>
         <ul v-if="finishedPolls.length">
           <li v-for="poll in finishedPolls" :key="poll.pollId">
-            <router-link :to="'/personal-account/polls/' + poll.pollId" class="poll-link finished">
+            <router-link
+              :to="'/personal-account/polls/' + poll.pollId"
+              class="poll-link finished"
+            >
               <span v-if="poll.isPrivate" class="lock-icon">🔒</span>
               {{ poll.title }}
             </router-link>
@@ -30,30 +41,42 @@
       </div>
     </div>
 
-    <router-link to="/personal-account/create-poll" class="create-button">Создать голосование</router-link>
+    <router-link to="/personal-account/create-poll" class="create-button"
+      >Создать голосование</router-link
+    >
   </div>
 </template>
 
 <script>
-import { getPolls } from '../services/pollService';
+import { getPolls } from "../services/pollService";
 
 export default {
   data() {
     return {
-      polls: []
+      polls: [],
+      loading: true,
+      error: null,
     };
   },
   computed: {
     activePolls() {
-      return this.polls.filter(poll => !poll.isFinished);
+      return this.polls.filter((poll) => !poll.isFinished);
     },
     finishedPolls() {
-      return this.polls.filter(poll => poll.isFinished);
-    }
+      return this.polls.filter((poll) => poll.isFinished);
+    },
   },
   async mounted() {
-    this.polls = await getPolls();
-  }
+    try {
+      this.polls = await getPolls();
+    } catch (err) {
+      // пытаемся достать текст ошибки от сервера (axios-style)
+      const msg = err?.response?.data?.message || err?.message;
+      this.error = msg || "Не удалось получить список голосований.";
+    } finally {
+      this.loading = false;
+    }
+  },
 };
 </script>
 
@@ -69,6 +92,19 @@ h2 {
   color: #333;
   font-size: 24px;
   margin-bottom: 20px;
+}
+
+.loading {
+  font-size: 18px;
+  color: #555;
+  margin: 20px 0;
+}
+
+.error {
+  color: #dc3545;
+  font-size: 18px;
+  font-weight: bold;
+  margin: 20px 0;
 }
 
 .poll-columns {
@@ -125,7 +161,6 @@ li {
   background: #0056b3;
 }
 
-
 .poll-link.finished {
   background: #6c757d;
 }
@@ -152,5 +187,4 @@ li {
   color: #999;
   font-size: 16px;
 }
-
 </style>

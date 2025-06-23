@@ -18,3 +18,12 @@ export async function getPollDetails(request) {
     throw new Error(`Ошибка при отправке транзакции: ${error}`);
   }
 }
+
+export async function getPollResults(request) {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/poll-results`, request);
+    return response.data;
+  } catch (error) {
+    throw new Error(`Ошибка при отправке транзакции: ${error}`);
+  }
+}

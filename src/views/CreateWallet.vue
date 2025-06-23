@@ -1,42 +1,56 @@
 <template>
   <div class="create-wallet">
     <h1>Создание кошелька</h1>
-    <input v-model="password" type="password" placeholder="Введите пароль" />
-    <button @click="createWallet">Создать кошелек</button>
+
+    <input
+      v-model="password"
+      type="password"
+      placeholder="Введите пароль"
+      @keyup.enter="createWalletHandler"
+    />
+
+    <button :disabled="loading || !password" @click="createWalletHandler">
+      <span v-if="loading">Создаём…</span>
+      <span v-else>Создать кошелёк</span>
+    </button>
+
+    <p v-if="error" class="error">{{ error }}</p>
   </div>
 </template>
 
-<script>
-import { createWallet } from '../services/walletService';
-import { useWalletStore } from '../services/walletStore';
-export default {
-  name: 'CreateWallet',
-  setup() {
-    const walletStore = useWalletStore();
-    return { 
-      walletStore
-    };
-  },
-  data() {
-    return {
-      password: '',
-    };
-  },
-  methods: {
-    async createWallet() {
-      try {
+<script setup>
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { useWalletStore } from "../services/walletStore";
+import { createWallet } from "../services/walletService";
 
-        const wallet = await createWallet(this.password);
-        console.log('Кошелек создан:', wallet.address);
-        // this.$router.push({ path: '/personal-account', query: { address: wallet.address, password: this.password } });
-        this.walletStore.setCredentials(wallet.address, this.password);
-        this.$router.push('/personal-account');
-      } catch (error) {
-        console.error('Ошибка при создании кошелька:', error.message);
-      }
-    },
-  },
-};
+const password = ref("");
+const loading = ref(false);
+const error = ref(null);
+
+const router = useRouter();
+const walletStore = useWalletStore();
+
+async function createWalletHandler() {
+  if (!password.value) {
+    error.value = "Пароль не может быть пустым";
+    return;
+  }
+  loading.value = true;
+  error.value = null;
+
+  try {
+    const wallet = await createWallet(password.value);
+    walletStore.setCredentials(wallet.address, password.value);
+    router.push("/personal-account");
+  } catch (err) {
+    const message =
+      err && typeof err === "object" && "message" in err ? err.message : null;
+    error.value = message || "Не удалось создать кошелёк. Попробуйте ещё раз.";
+  } finally {
+    loading.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -67,7 +81,17 @@ button {
   transition: background-color 0.3s ease;
 }
 
-button:hover {
+button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button:hover:enabled {
   background-color: #3aa876;
+}
+
+.error {
+  margin-top: 1rem;
+  color: #e63946;
 }
 </style>

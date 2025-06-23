@@ -3,6 +3,7 @@ import { buildBabyjub } from "circomlibjs";
 
 export const babyjub = await buildBabyjub();
 const { F, subOrder, Base8: G } = babyjub;
+console.log("G", G);
 
 export function buildMerkleTree(leaves, poseidon) {
   const n = 1 << Math.ceil(Math.log2(leaves.length));
@@ -87,9 +88,9 @@ export function randScalar(limit = subOrder) {
 }
 export function encrypt(pk, weight) {
   const M = encode(weight);
+  console.log("pk", pk);
 
   const k = randScalar();
-
   return {
     C1: mul(G, k),
     C2: add(M, mul(pk, k)),

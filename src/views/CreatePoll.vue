@@ -1,293 +1,371 @@
 <template>
   <div class="poll-container">
-    <h2>Создание онлайн голосования</h2>
-    <form @submit.prevent="submitPoll">
-      <div class="form-group">
-        <label for="title">Название голосования:</label>
-        <input
-          type="text"
-          id="title"
-          v-model="pollTitle"
-          required
-          placeholder="Введите название голосования"
-        />
-      </div>
+    <h2 class="title">Создание онлайн-голосования</h2>
 
-      <div
-        v-for="(option, index) in options"
-        :key="index"
-        class="form-group option-group"
-      >
-        <input
-          type="text"
-          v-model="options[index]"
-          required
-          placeholder="Введите вариант"
-        />
-        <button
-          type="button"
-          class="remove-btn"
-          @click="removeOption(index)"
-          v-if="options.length > 2"
-        >
-          ✖
-        </button>
-      </div>
+    <form class="card" @submit.prevent="submitPoll">
+      <label class="form-field">
+        Название голосования
+        <input v-model="pollTitle" placeholder="Введите название" required />
+      </label>
 
-      <button type="button" class="add-btn" @click="addOption">
-        Добавить вариант
-      </button>
-
-      <div class="checkbox-group">
-        <input type="checkbox" id="private" v-model="isPrivate" />
-        <label for="private">Закрытое голосование</label>
-      </div>
-
-      <div v-if="isPrivate" class="invited-users">
-        <label>Приглашённые пользователи:</label>
-        <div
-          v-for="(user, index) in invitedUsers"
-          :key="index"
-          class="invited-user-row"
-        >
-          <input
-            type="text"
-            v-model="invitedUsers[index]"
-            placeholder="Имя пользователя"
-          />
+      <div class="options-block">
+        <label>Варианты</label>
+        <div v-for="(option, idx) in options" :key="idx" class="row">
+          <input v-model="options[idx]" required placeholder="Вариант ответа" />
           <button
+            v-if="options.length > 2"
             type="button"
-            class="remove-btn"
-            @click="removeUser(index)"
-            v-if="invitedUsers.length > 1"
+            class="icon-btn danger small"
+            @click="removeOption(idx)"
+            title="Удалить вариант"
           >
             ✖
           </button>
         </div>
-        <button type="button" class="add-user-btn" @click="addUser">
-          Добавить пользователя
+        <button type="button" class="btn success w100" @click="addOption">
+          + Добавить вариант
         </button>
       </div>
 
-      <div class="form-group">
-        <label for="tokens">Количество токенов:</label>
-        <input
-          type="number"
-          id="tokens"
-          v-model.number="tokenAmount"
-          min="0"
-          placeholder="Введите количество токенов"
-        />
+      <!-- Приватность -->
+      <label class="checkbox-field">
+        <input type="checkbox" v-model="isPrivate" @change="onPrivacyChange" />
+        <span class="checkbox-label">Закрытое голосование</span>
+      </label>
+
+      <!-- Приглашённые -->
+      <div v-if="isPrivate" class="invited-block">
+        <label>Приглашённые пользователи</label>
+        <div v-for="(user, idx) in invitedUsers" :key="idx" class="row">
+          <select v-model="invitedUsers[idx]" :required="isPrivate">
+            <option disabled value="">Выберите пользователя</option>
+            <option
+              v-for="addr in allAddresses"
+              :key="addr"
+              :value="addr"
+              :disabled="
+                invitedUsers.includes(addr) && invitedUsers[idx] !== addr
+              "
+            >
+              {{ addr }}
+            </option>
+          </select>
+          <button
+            type="button"
+            class="icon-btn danger small"
+            @click="removeUser(idx)"
+            title="Удалить пользователя"
+          >
+            ✖
+          </button>
+        </div>
+        <button type="button" class="btn success w100" @click="addUser">
+          + Добавить пользователя
+        </button>
       </div>
 
-      <button type="submit">Создать голосование</button>
-    </form>
+      <!-- Токены -->
+      <label v-if="isPrivate" class="form-field">
+        Количество токенов
+        <input
+          type="number"
+          min="0"
+          v-model.number="tokenAmount"
+          placeholder="0"
+          class="no-spinner"
+        />
+      </label>
 
-    <div v-if="pollCreated" class="poll-preview">
-      <h3>Новое голосование:</h3>
-      <p><strong>Название:</strong> {{ pollTitle }}</p>
-      <p><strong>Варианты:</strong> {{ options.join(" | ") }}</p>
-      <p><strong>Тип:</strong> {{ isPrivate ? "Закрытое" : "Открытое" }}</p>
-      <p v-if="isPrivate">
-        <strong>Приглашённые:</strong> {{ invitedUsers.join(", ") }}
-      </p>
-      <p><strong>Токены:</strong> {{ tokenAmount }}</p>
-    </div>
+      <!-- Submit -->
+      <button type="submit" class="btn primary w100" :disabled="loading">
+        <span v-if="loading">Создаём…</span>
+        <span v-else>Создать голосование</span>
+      </button>
+
+      <!-- Сообщения -->
+      <p v-if="error" class="error">{{ error }}</p>
+    </form>
   </div>
 </template>
 
-<script>
-import { sendTransaction, signData } from "../services/walletService";
+<script setup>
+import { ref, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import { useWalletStore } from "../services/walletStore";
+import {
+  sendTransaction,
+  signData,
+  getAddresses,
+} from "../services/walletService";
 
-export default {
-  data() {
-    return {
-      pollTitle: "",
-      options: ["", ""],
-      pollCreated: false,
-      tokenAmount: 0,
-      isPrivate: false,
-      invitedUsers: [""],
-    };
-  },
-  setup() {
-    const walletStore = useWalletStore();
-    return {
-      walletStore,
-    };
-  },
-  methods: {
-    addUser() {
-      this.invitedUsers.push("");
-    },
-    removeUser(index) {
-      this.invitedUsers.splice(index, 1);
-    },
-    addOption() {
-      this.options.push("");
-    },
-    removeOption(index) {
-      if (this.options.length > 2) {
-        this.options.splice(index, 1);
-      }
-    },
-    async submitPoll() {
-      try {
-        const keys = this.walletStore.getKeyes();
-        console.log("KEYS", keys.privateKey);
-        const transactionData = {
-          transactionType: 1,
-          publicKey: keys.publicKey.toString(),
-          fromAddress: this.walletStore.credentials.address.toString(),
-          signature: "",
-          timestamp: new Date().toISOString(),
-          pollTitle: this.pollTitle,
-          options: this.options,
-          isPrivate: this.isPrivate,
-          invitedUsers: this.invitedUsers,
-          tokensAmount: this.tokenAmount,
-        };
-        console.log("TRANSACTION");
-        const rawData = `${transactionData.publicKey}${transactionData.fromAddress}${transactionData.timestamp}${transactionData.pollTitle}`;
-        transactionData.signature = await signData(rawData, keys.privateKey);
-        console.log("SIGNATURE");
-        await sendTransaction("poll/create-poll", transactionData);
-        console.log("Транзакция создания голосования успешно отправлена.");
-        this.pollCreated = true;
-        this.pollTitle = "";
-        this.options = ["", ""];
-      } catch (error) {
-        console.error(error.message);
-      }
-    },
-  },
+const router = useRouter();
+
+const pollTitle = ref("");
+const options = ref(["", ""]);
+const isPrivate = ref(false);
+const invitedUsers = ref([""]);
+const tokenAmount = ref(0);
+const loading = ref(false);
+const error = ref(null);
+const allAddresses = ref([]);
+const walletStore = useWalletStore();
+
+onMounted(async () => {
+  try {
+    const response = await getAddresses();
+    allAddresses.value = response.data;
+    if (allAddresses.value.length == 0) router.push("/");
+  } catch (e) {
+    console.error("Не удалось загрузить адреса", e);
+    router.push("/");
+  }
+});
+
+const addOption = () => options.value.push("");
+const removeOption = (i) => {
+  if (options.value.length > 2) options.value.splice(i, 1);
 };
+
+const addUser = () => invitedUsers.value.push("");
+const removeUser = (i) => {
+  invitedUsers.value.splice(i, 1);
+};
+
+function onPrivacyChange() {
+  if (isPrivate.value && invitedUsers.value.length > 0) {
+    invitedUsers.value.splice(0, 1);
+  }
+}
+
+function validate() {
+  if (!pollTitle.value.trim()) return "Заполните название голосования";
+  if (options.value.some((o) => !o.trim())) return "Заполните все варианты";
+
+  const normalizedOptions = options.value.map((o) => o.trim().toLowerCase());
+  const uniqueOptions = new Set(normalizedOptions);
+  if (uniqueOptions.size !== normalizedOptions.length) {
+    return "Варианты ответа не должны повторяться";
+  }
+
+  if (isPrivate.value && invitedUsers.value.some((u) => !u.trim()))
+    return "Заполните всех приглашённых пользователей";
+
+  return null;
+}
+
+async function submitPoll() {
+  const validationMsg = validate();
+  if (validationMsg) {
+    error.value = validationMsg;
+    return;
+  }
+
+  loading.value = true;
+  error.value = null;
+
+  try {
+    const keys = walletStore.getKeyes();
+    const tx = {
+      transactionType: 1,
+      publicKey: keys.publicKey,
+      fromAddress: walletStore.credentials.address,
+      signature: "",
+      timestamp: new Date().toISOString(),
+      pollTitle: pollTitle.value,
+      options: options.value,
+      isPrivate: isPrivate.value,
+      invitedUsers: invitedUsers.value,
+      tokensAmount: tokenAmount.value,
+    };
+
+    const raw = `${tx.publicKey}${tx.fromAddress}${tx.timestamp}${tx.pollTitle}`;
+    tx.signature = await signData(raw, keys.privateKey);
+
+    const response = await sendTransaction("poll/create-poll", tx);
+
+    const pollId = response.data.pollId;
+    router.push({ path: `/personal-account/polls/${pollId}` });
+  } catch (err) {
+    error.value =
+      err?.response?.data?.message ||
+      err?.message ||
+      "Не удалось создать голосование";
+  } finally {
+    loading.value = false;
+  }
+}
 </script>
+
 <style scoped>
 .poll-container {
   max-width: 500px;
-  margin: auto;
+  margin: 0 auto;
   padding: 20px;
+  text-align: center;
+}
+
+.title {
+  font-size: 24px;
+  margin-bottom: 16px;
+  color: #333;
+}
+
+.card {
+  background: #f9f9f9;
   border: 1px solid #ddd;
   border-radius: 8px;
-  background: #f9f9f9;
+  padding: 20px;
 }
 
-h2 {
-  text-align: center;
-  font-size: 22px;
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  text-align: left;
 }
 
-.form-group {
-  margin-bottom: 15px;
+.form-field input {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+.options-block label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.row {
   display: flex;
   align-items: center;
-}
-
-input {
-  flex: 1;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-}
-
-button {
-  width: 100%;
-  padding: 10px;
-  margin-top: 10px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: 0.3s;
-}
-
-button:hover {
-  background-color: #0056b3;
-}
-
-.add-btn {
-  background-color: #28a745;
-}
-
-.add-btn:hover {
-  background-color: #218838;
-}
-
-.remove-btn {
-  background-color: #dc3545;
-  color: white;
-  border: none;
-  margin-left: 10px;
-  padding: 6px 10px;
-  cursor: pointer;
-  border-radius: 5px;
-}
-
-.remove-btn:hover {
-  background-color: #c82333;
-}
-
-.poll-preview {
-  margin-top: 20px;
-  padding: 10px;
-  border: 1px solid #ccc;
-  background: #fff;
-  border-radius: 5px;
-  text-align: center;
-}
-.checkbox-group {
-  margin-top: 10px;
-  align-items: center;
-}
-
-.checkbox-group input[type="checkbox"] {
-  width: auto;
-  margin-right: 10px;
-}
-.invited-users {
-  margin-top: 10px;
-  padding: 10px;
-  background: #f1f1f1;
-  border-radius: 5px;
-  border: 1px solid #ccc;
-}
-
-.invited-user-row {
-  display: flex;
-  align-items: center;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
-.invited-user-row input {
+.row input,
+.row select {
   flex: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
 }
 
-.invited-user-row .remove-btn {
-  margin-left: 10px;
-  padding: 6px 10px;
+input.no-spinner::-webkit-outer-spin-button,
+input.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input.no-spinner {
+  -moz-appearance: textfield;
 }
 
-.add-user-btn {
+.btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 15px;
+  transition: background 0.3s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #fff !important;
+}
+
+.w100 {
   width: 100%;
-  background-color: #28a745;
-  margin-top: 5px;
 }
 
-.add-user-btn:hover {
-  background-color: #218838;
+.primary {
+  background: #007bff;
+}
+.primary:hover:not(:disabled) {
+  background: #0056b3;
 }
 
-.checkbox-group {
+.success {
+  background: #28a745;
+}
+.success:hover:not(:disabled) {
+  background: #218838;
+}
+
+.danger {
+  background: #dc3545;
+}
+.danger:hover:not(:disabled) {
+  background: #c82333;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  margin: 10px 0;
+  justify-content: center;
+  color: #fff;
 }
 
-.checkbox-group input[type="checkbox"] {
-  width: auto;
-  margin-right: 10px;
+.icon-btn.danger {
+  background: #dc3545;
+  border-radius: 6px;
+}
+
+.icon-btn.danger:hover {
+  background: #c82333;
+}
+
+.small {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  background: #e9ecef;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.checkbox-label {
+  font-weight: 600;
+  color: #333;
+}
+
+.invited-block label {
+  font-weight: 600;
+  text-align: left;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.invited-block {
+  margin-bottom: 16px;
+}
+
+.error {
+  color: #dc3545;
+  margin-top: 20px;
+  margin-bottom: 0px;
+  font-weight: bold;
+}
+.success {
+  color: #28a745;
+  margin-top: 12px;
+  font-weight: bold;
 }
 </style>

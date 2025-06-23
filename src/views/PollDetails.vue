@@ -2,28 +2,23 @@
   <div class="poll-details">
     <h2>{{ poll ? poll.title : "Голосование не найдено" }}</h2>
 
-    <p v-if="poll && poll.isFinished" class="finished-message">
-      Голосование завершено
-    </p>
-    <p v-else-if="hasVoted" class="voted-message">
-      Вы уже приняли участие в этом голосовании
-    </p>
-    <p v-else-if="!hasPermission" class="no-permission-message">
-      Вы не можете принять участие в этом голосовании
-    </p>
-    <p
-      v-if="
-        true == false &&
-        poll &&
-        poll.isPrivate &&
-        hasPermission &&
-        !poll.isFinished &&
-        !hasVoted
-      "
-      class="tokens-available"
-    >
-      Вам доступно {{ poll.tokensAvailable }} токенов
-    </p>
+    <!-- Информационный блок -->
+    <div class="info-messages">
+      <p v-if="pollWeight" class="info-message">
+        Вес вашего голоса: <strong>{{ pollWeight }}</strong>
+      </p>
+
+      <p v-if="poll && poll.isFinished" class="info-message">
+        Голосование завершено
+      </p>
+      <p v-else-if="hasVoted" class="info-message">
+        Вы уже приняли участие в этом голосовании, ожидайте завершения
+        голосования
+      </p>
+      <p v-else-if="!hasPermission" class="info-message">
+        Вы не можете принять участие в этом голосовании
+      </p>
+    </div>
 
     <div class="options" v-if="poll">
       <label
@@ -35,53 +30,53 @@
           <input
             type="radio"
             v-model="selectedOptionId"
-            :value="option.id"
-            :disabled="poll.isFinished || hasVoted || !hasPermission"
+            :value="option.id.toString()"
+            :disabled="!isVotingStage || hasVoted || !hasPermission"
           />
           {{ option.option }}
-          <span
-            class="vote-count"
-            v-if="poll.privatePollStatus == 2 || poll.isPrivate == false"
-          >
+          <span class="vote-count">
             ({{ poll.votes[option.id] || 0 }} голосов)
           </span>
         </div>
 
         <input
-          v-if="
-            poll.isPrivate && hasPermission && !poll.isFinished && !hasVoted
-          "
+          v-if="poll.isPrivate && hasPermission && isVotingStage && !hasVoted"
           type="number"
           min="1"
           :max="poll.tokensAvailable"
           class="token-input"
           v-model.number="tokenAmounts[option.id]"
-          :disabled="selectedOptionId !== option.id"
+          :disabled="selectedOptionId !== option.id.toString()"
           placeholder="Токены"
         />
       </label>
     </div>
+
     <button
       v-if="
         poll &&
         poll.isPrivate &&
         poll.privatePollStatus == 0 &&
-        this.walletStore &&
-        this.walletStore.registred.includes(this.poll.pollId) == false
+        walletStore &&
+        !walletStore.registred.includes(poll.pollId) &&
+        !localRegisteredPolls.includes(poll.pollId)
       "
       @click="register"
       class="vote-button"
+      :disabled="isRegistering"
     >
-      Зарегистрироваться
+      {{ isRegistering ? "Регистрация..." : "Зарегистрироваться" }}
     </button>
+
     <button
       v-if="
         poll && poll.isPrivate && poll.privatePollStatus == 0 && poll.isOwner
       "
       @click="completeRegistaration"
       class="vote-button"
+      :disabled="isCompletingRegistration"
     >
-      Завершить регистрацию
+      {{ isCompletingRegistration ? "Завершение..." : "Завершить регистрацию" }}
     </button>
     <button
       v-if="
@@ -91,24 +86,33 @@
       "
       @click="submitVote"
       :disabled="
-        !selectedOptionId || poll?.isFinished || hasVoted || !hasPermission
+        !selectedOptionId ||
+        poll?.isFinished ||
+        hasVoted ||
+        !hasPermission ||
+        isVoting
       "
       class="vote-button"
     >
-      Проголосовать
+      {{ isVoting ? "Голосование..." : "Проголосовать" }}
     </button>
-
     <button
       v-if="poll && poll.isOwner && !poll.isFinished"
       @click="endPoll"
+      :disabled="isFinishingPoll"
       class="end-button"
     >
-      Завершить голосование
+      {{ isFinishingPoll ? "Завершение..." : "Завершить голосование" }}
     </button>
 
-    <router-link to="/personal-account/polls" class="back-button"
-      >Вернуться к списку</router-link
-    >
+    <router-link to="/personal-account/polls" class="back-button">
+      Вернуться к списку
+    </router-link>
+
+    <!-- Общий вывод ошибок в самом низу -->
+    <p v-if="errorMessage" class="error-message">
+      {{ errorMessage }}
+    </p>
   </div>
 </template>
 
@@ -118,16 +122,28 @@ import { useWalletStore } from "../services/walletStore";
 import { sendTransaction, signData } from "../services/walletService";
 import { toBig, encrypt, babyjub } from "../services/zkSnarksService";
 import { buildPoseidon } from "circomlibjs";
-import forge from "node-forge";
-import cryptoJS from "crypto-js";
 import axios from "axios";
 import { groth16 } from "snarkjs";
-import { ref } from "vue";
-
-// import { ec as EC } from "elliptic";
 
 export default {
   props: ["id"],
+  computed: {
+    isVotingStage() {
+      if (!this.poll) return false;
+      if (this.poll.isFinished) return false;
+      if (this.poll.isPrivate) {
+        return this.poll.privatePollStatus === 1;
+      }
+      return true;
+    },
+    votedOption() {
+      if (!this.poll || !this.hasVoted) return null;
+      const votedId = localStorage.getItem(`votedOption_${this.poll.pollId}`);
+      if (!votedId) return null;
+
+      return this.poll.options.find((o) => o.id === votedId);
+    },
+  },
   setup() {
     const walletStore = useWalletStore();
     return { walletStore };
@@ -139,466 +155,387 @@ export default {
       hasVoted: false,
       hasPermission: true,
       tokenAmounts: {},
-      commitHex: "",
-      nullifierHex: "",
-      weight: 0,
-      merklePath: [],
+      errorMessage: "",
+      isRegistering: false,
+      localRegisteredPolls: [],
+      isCompletingRegistration: false,
+      isVoting: false,
+      isFinishingPoll: false,
+      pollWeight: null,
     };
   },
   async mounted() {
-    await this.loadPoll();
-    this.checkVoteStatus();
+    this.localRegisteredPolls = JSON.parse(
+      localStorage.getItem("localRegisteredPolls") || "[]"
+    );
+    try {
+      await this.loadPoll();
+      if (this.poll?.isFinished) {
+        await this.fetchResults();
+      }
+      this.checkVoteStatus();
+    } catch (e) {
+      this.processError(e);
+    }
   },
   methods: {
+    processError(error) {
+      console.error(error);
+      this.errorMessage =
+        error?.message ||
+        error?.response?.data?.message ||
+        error?.toString() ||
+        "Неизвестная ошибка";
+    },
     async loadPoll() {
-      const request = {
-        Address: this.walletStore.credentials.address,
-        PollId: this.id,
-      };
-      this.poll = await getPollDetails(request);
-      this.hasPermission = this.poll.hasPermission;
-      // console.log("Голоса:", this.poll.votes);
-      console.log(this.poll);
+      this.errorMessage = "";
+      try {
+        const request = {
+          Address: this.walletStore.credentials.address,
+          PollId: this.id,
+        };
+        this.poll = await getPollDetails(request);
+        console.log("Poll options", this.poll.options);
+
+        this.hasPermission = this.poll.hasPermission;
+        const localVote = localStorage.getItem(
+          `votedOption_${this.poll.pollId}`
+        );
+        if (localVote) {
+          this.selectedOptionId = localVote;
+        }
+        const allWeights = JSON.parse(
+          localStorage.getItem("weightsPerPoll") || "{}"
+        );
+        this.pollWeight = allWeights[this.poll.pollId] || null;
+      } catch (e) {
+        this.processError(e);
+      }
+    },
+    async fetchResults() {
+      if (this.poll.isPrivate == false) return;
+      try {
+        const { results } = await axios
+          .get(
+            `https://192.168.1.87:5000/api/poll/${this.poll.pollId}/poll-results`
+          )
+          .then((r) => r.data);
+
+        this.poll.votes = {};
+        for (const [index, count] of Object.entries(results)) {
+          const option = this.poll.options[Number(index)];
+          if (option) {
+            this.poll.votes[option.id] = count;
+          }
+        }
+      } catch (e) {
+        this.processError(e);
+      }
     },
     checkVoteStatus() {
-      const voteKey = `voted_${this.walletStore.credentials.address}_${this.id}`;
-      this.hasVoted = this.walletStore.voted.includes(voteKey) === true;
+      try {
+        const voteKey = `voted_${this.walletStore.credentials.address}_${this.id}`;
+        this.hasVoted = this.walletStore.voted.includes(voteKey);
+
+        if (this.hasVoted && !localStorage.getItem(`votedOption_${this.id}`)) {
+          const savedId = this.poll?.options?.find((opt) => opt.votedByUser);
+          if (savedId) {
+            localStorage.setItem(
+              `votedOption_${this.poll.pollId}`,
+              this.selectedOptionId.toString()
+            );
+          }
+        }
+      } catch (e) {
+        this.processError(e);
+      }
     },
     async submitVote() {
-      if (this.poll.isPrivate) this.submitZKPVote();
-      // else
-      // this.submitZKPVote();
+      this.errorMessage = "";
+      this.isVoting = true;
+      try {
+        if (this.poll.isPrivate) {
+          await this.submitZKPVote();
+        } else {
+          await this.submitUsualVote();
+        }
+
+        const voteKey = `voted_${this.walletStore.credentials.address}_${this.id}`;
+        if (!this.walletStore.voted.includes(voteKey)) {
+          this.walletStore.voted.push(voteKey);
+        }
+
+        localStorage.setItem(
+          `votedOption_${this.poll.pollId}`,
+          this.selectedOptionId.toString()
+        );
+
+        await this.loadPoll();
+        this.checkVoteStatus();
+      } catch (e) {
+        this.processError(e);
+      } finally {
+        this.isVoting = false;
+      }
+    },
+    async submitZKPVote() {
+      try {
+        const secret = localStorage.getItem("secret");
+        const weight = localStorage.getItem("weight");
+        const allWeights = JSON.parse(
+          localStorage.getItem("weightsPerPoll") || "{}"
+        );
+        allWeights[this.poll.pollId] = weight;
+        localStorage.setItem("weightsPerPoll", JSON.stringify(allWeights));
+
+        this.pollWeight = weight;
+        if (!secret || !weight) {
+          throw new Error("Отсутствуют обязательные данные (secret/weight)");
+        }
+
+        const poseidon = await buildPoseidon();
+        const F = poseidon.F;
+        const sh = F.toString(poseidon([secret]));
+        const commit = F.toString(poseidon([sh, weight.toString()]));
+
+        const { siblings, merklePath, root, pk_x, pk_y } = await axios
+          .get(
+            `https://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-tree-data`,
+            {
+              params: { commit },
+            }
+          )
+          .then((r) => r.data);
+
+        const optionId = this.poll.options.findIndex(
+          (o) => o.id === this.selectedOptionId
+        );
+        const pollId = this.poll.pollId;
+        const weightHash = F.toString(poseidon([weight]));
+        const nullifier = F.toString(poseidon([commit, pollId]));
+        const optionSecretHash = F.toString(poseidon([optionId, secret]));
+
+        const pk = [
+          babyjub.F.e(window.BigInt(pk_x)),
+          babyjub.F.e(window.BigInt(pk_y)),
+        ];
+        const { C1, C2, k } = encrypt(pk, window.BigInt(weight));
+        const membershipInput = {
+          root,
+          pathElements: siblings,
+          pathIndices: merklePath,
+          nullifier,
+          secret: secret.toString(),
+          pollId,
+          weight: weight.toString(),
+          weightHash,
+          commit,
+          optionId: optionId.toString(),
+          optionSecretHash,
+        };
+
+        const voteInput = {
+          C1x: toBig(C1[0]).toString(),
+          C1y: toBig(C1[1]).toString(),
+          C2x: toBig(C2[0]).toString(),
+          C2y: toBig(C2[1]).toString(),
+          PubX: toBig(pk[0]).toString(),
+          PubY: toBig(pk[1]).toString(),
+          k: k.toString(),
+          m: weight.toString(),
+        };
+
+        console.log(voteInput);
+
+        const membershipWasm = "/circom/PoseidonCheck_js/PoseidonCheck.wasm";
+        const membershipZkey = "/circom/PoseidonCheck.zkey";
+        const membershipVkey = await fetch(
+          "/circom/PoseidonCheck.vkey.json"
+        ).then((r) => r.json());
+
+        const voteWasm = "/circom/ElGamalCheck_js/ElGamalCheck.wasm";
+        const voteZkey = "/circom/ElGamalCheck.zkey";
+        const voteVkey = await fetch("/circom/ElGamalCheck.vkey.json").then(
+          (r) => r.json()
+        );
+
+        const { proof: membershipProof, publicSignals: membershipSignals } =
+          await groth16.fullProve(
+            membershipInput,
+            membershipWasm,
+            membershipZkey
+          );
+
+        const { proof: voteProof, publicSignals: voteSignals } =
+          await groth16.fullProve(voteInput, voteWasm, voteZkey);
+
+        const membershipVerified = await groth16.verify(
+          membershipVkey,
+          membershipSignals,
+          membershipProof
+        );
+
+        const voteVerified = await groth16.verify(
+          voteVkey,
+          voteSignals,
+          voteProof
+        );
+
+        if (!membershipVerified || !voteVerified) {
+          throw new Error("Локальная валидация доказательств не пройдена");
+        }
+
+        const proof = {
+          membershipProof,
+          membershipSignals,
+          voteProof,
+          voteSignals,
+          nullifier,
+          pollId,
+          weightHash,
+          root,
+          optionId,
+          C1x: toBig(C1[0]).toString(),
+          C1y: toBig(C1[1]).toString(),
+          C2x: toBig(C2[0]).toString(),
+          C2y: toBig(C2[1]).toString(),
+        };
+
+        await sendTransaction("poll/anonimus-vote", proof);
+      } catch (e) {
+        this.processError(e);
+      }
     },
     async submitUsualVote() {
-      if (!this.selectedOptionId) {
-        alert(`Выберите вариант, за который будете голосовать!`);
-        return;
-      }
+      this.errorMessage = "";
       try {
         const keys = this.walletStore.getKeyes();
-        const publicKey = forge.pki.publicKeyFromPem(this.poll.publicKey);
-
-        // 1. Преобразуем selectedOption в хэш (как число)
-        const md = forge.md.sha256.create();
-        md.update(this.selectedOptionId, "utf8");
-        const mBytes = md.digest().getBytes();
-        const m = new forge.jsbn.BigInteger(forge.util.bytesToHex(mBytes), 16);
-        // 2. Параметры открытого ключа подписанта
-        const e = publicKey.e; // 65537
-        const n = publicKey.n; // публичный модуль
-        // 3. Случайное r такое, что gcd(r, n) = 1
-        // Адаптер для генератора случайных байтов
-        const rng = forge.random.createInstance();
-        const rngAdapter = {
-          nextBytes: function (ba) {
-            const bytes = rng.getBytesSync(ba.length);
-            for (let i = 0; i < ba.length; i++) {
-              ba[i] = bytes.charCodeAt(i);
-            }
-          },
-        };
-        // Генерация случайного числа r, взаимно простого с n
-        let r;
-        do {
-          r = new forge.jsbn.BigInteger(n.bitLength(), rngAdapter);
-        } while (!r.gcd(n).equals(forge.jsbn.BigInteger.ONE));
-        // 4. m' = m * r^e mod n (ослеплённое сообщение)
-        const re = r.modPow(e, n);
-        const blinded = m.multiply(re).mod(n);
-        const blindedHex = blinded.toString(16);
-        console.log("blindedHex", blindedHex);
-
-        const signBlindedTransaction = {
-          transactionType: 6,
+        const tx = {
+          transactionType: 2,
           publicKey: keys.publicKey.toString(),
           fromAddress: this.walletStore.credentials.address.toString(),
           signature: "",
           timestamp: new Date().toISOString(),
           pollId: this.poll.pollId,
-          blindedMessage: blindedHex,
-        };
-
-        //получить анонимную подпись, разослепить и отправить анонимно голос.
-        const rawData = `${signBlindedTransaction.publicKey}${signBlindedTransaction.fromAddress}${signBlindedTransaction.timestamp}${signBlindedTransaction.blindedMessage}${signBlindedTransaction.pollId}`;
-        signBlindedTransaction.signature = await signData(
-          rawData,
-          keys.privateKey
-        );
-        const signedBlindedResponse = await sendTransaction(
-          "poll/sign-blinded",
-          signBlindedTransaction
-        );
-        console.log("SignedResponse", signedBlindedResponse.data);
-        const signedBlindedHex =
-          signedBlindedResponse.data.payload.signedBlindedMessage;
-
-        console.log("signedBlindedHex", signedBlindedHex);
-        console.log("r", r);
-
-        // Преобразуем hex в BigInteger
-        const signedBlinded = new forge.jsbn.BigInteger(signedBlindedHex, 16);
-        // Получаем параметры публичного ключа
-        const n1 = publicKey.n; // Модуль из публичного ключа
-        // Вычисляем r^(-1) mod n
-        const rInv = r.modInverse(n1);
-        // Вычисляем разослепленное сообщение: s = s' * r^(-1) mod n
-        const unblinded = signedBlinded.multiply(rInv).mod(n).toString(16);
-
-        const anonimusOption = {
-          transactionType: 7,
-          publicKey: "",
-          fromAddress: "",
-          signature: signedBlindedResponse.data.signature,
-          timestamp: new Date().toISOString(),
-          pollId: this.poll.pollId,
           optionId: this.selectedOptionId,
-          tokens: this.poll.tokensAvailable,
-          signedUnblinded: unblinded,
-          payload: signedBlindedResponse.data.payload,
         };
-        const voteResponse = await sendTransaction(
-          "poll/anonimus-vote",
-          anonimusOption
-        );
-        console.log("VoteResponse", voteResponse);
+        const rawData = `${tx.publicKey}${tx.fromAddress}${tx.timestamp}${tx.pollId}${tx.optionId}`;
+        tx.signature = await signData(rawData, keys.privateKey);
 
-        const voteKey = `voted_${this.walletStore.credentials.address}_${this.id}`;
-        // localStorage.setItem(voteKey, "true");
-        this.walletStore.voted.push(voteKey);
-        this.hasVoted = true;
-
-        if (this.poll.votes[this.selectedOptionId]) {
-          this.poll.votes[this.selectedOptionId] += this.poll.tokensAvailable;
-        } else {
-          this.poll.votes[this.selectedOptionId] = this.poll.tokensAvailable;
-        }
-      } catch (error) {
-        console.error(error.message);
+        await sendTransaction("poll/usual-vote", tx);
+      } catch (e) {
+        this.processError(e);
       }
-    },
-    async submitZKPVote() {
-      const secret = localStorage.getItem("secret");
-      const weight = localStorage.getItem("weight");
-      if (secret === undefined || secret === "") {
-        console.log("Secret not found");
-        return;
-      }
-      if (weight === undefined || weight === "") {
-        console.log("Weight not found");
-        return;
-      }
-
-      const poseidon = await buildPoseidon();
-      const poseidonField = poseidon.F;
-      const sh = poseidonField.toString(poseidon([secret]));
-      const commit = poseidonField.toString(poseidon([sh, weight.toString()]));
-
-      const { siblings, merklePath, root, pk_x, pk_y } = await axios
-        .get(
-          `https://192.168.1.87:5000/api/poll/${this.poll.pollId}/membership-tree-data`,
-          {
-            params: { commit },
-          }
-        )
-        .then((r) => r.data);
-
-      const optionId = this.poll.options.findIndex(
-        (o) => o.id === this.selectedOptionId
-      );
-      const pollId = this.poll.pollId;
-      const weightHash = poseidonField.toString(poseidon([weight]));
-      const nullifier = poseidonField.toString(poseidon([commit, pollId]));
-      const optionSecretHash = poseidonField.toString(
-        poseidon([optionId, secret])
-      );
-      const pk = [
-        babyjub.F.e(window.BigInt(pk_x)),
-        babyjub.F.e(window.BigInt(pk_y)),
-      ];
-      const { C1, C2, k } = encrypt(pk, window.BigInt(weight));
-      console.log("C1", C1);
-      console.log("C2", C2);
-
-      const membershipInput = {
-        root,
-        pathElements: siblings,
-        pathIndices: merklePath,
-        nullifier,
-        secret: secret.toString(),
-        pollId,
-        weight: weight.toString(),
-        weightHash,
-        commit,
-        optionId: optionId.toString(),
-        optionSecretHash,
-      };
-
-      const voteInput = {
-        C1x: toBig(C1[0]).toString(),
-        C1y: toBig(C1[1]).toString(),
-        C2x: toBig(C2[0]).toString(),
-        C2y: toBig(C2[1]).toString(),
-        PubX: toBig(pk[0]).toString(),
-        PubY: toBig(pk[1]).toString(),
-        k: k.toString(),
-        m: weight.toString(),
-      };
-
-      const membershipWasm = "/circom/PoseidonCheck_js/PoseidonCheck.wasm";
-      const membershipZkey = "/circom/PoseidonCheck.zkey";
-      const membershipVkey = ref(null);
-      membershipVkey.value = await fetch(
-        "/circom/PoseidonCheck.vkey.json"
-      ).then((r) => r.json());
-
-      const voteWasm = "/circom/ElGamalCheck_js/ElGamalCheck.wasm";
-      const voteZkey = "/circom/ElGamalCheck.zkey";
-      const voteVkey = ref(null);
-      voteVkey.value = await fetch("/circom/ElGamalCheck.vkey.json").then((r) =>
-        r.json()
-      );
-
-      const { proof: membershipProof, publicSignals: membershipSignals } =
-        await groth16.fullProve(
-          membershipInput,
-          membershipWasm,
-          membershipZkey
-        );
-
-      const { proof: voteProof, publicSignals: voteSignals } =
-        await groth16.fullProve(voteInput, voteWasm, voteZkey);
-
-      const membershipVerified = await groth16.verify(
-        membershipVkey.value,
-        membershipSignals,
-        membershipProof
-      );
-      console.log(membershipProof);
-      const voteVerified = await groth16.verify(
-        voteVkey.value,
-        voteSignals,
-        voteProof
-      );
-      if (membershipVerified == false || voteVerified == false) {
-        throw "Unable to verify local";
-      } else {
-        console.log("Both checks are valid");
-      }
-
-      const proof = {
-        membershipProof,
-        membershipSignals,
-        voteProof,
-        voteSignals,
-        nullifier,
-        pollId,
-        weightHash,
-        root,
-        optionId,
-        C1x: toBig(C1[0]).toString(),
-        C1y: toBig(C1[1]).toString(),
-        C2x: toBig(C2[0]).toString(),
-        C2y: toBig(C2[1]).toString(),
-      };
-
-      await sendTransaction("poll/anonimus-vote", proof);
-
-      // const nullifier = cryptoJS
-      //   .SHA256(secretHex + this.poll.pollId)
-      //   .toString();
-      // const selectedIndex = this.poll.options.findIndex(
-      //   (opt) => opt.id === this.selectedOptionId
-      // );
-      // const oneBasedChioce = selectedIndex + 1;
-      // const m = oneBasedChioce * weight;
-      // const gHex = this.poll.votingKeyPair.gHex;
-      // const hHex = this.poll.votingKeyPair.hHex;
-      // const secp256k1 = new EC("secp256k1");
-      // const g = secp256k1.keyFromPublic(gHex, "hex").getPublic(); // G точка
-      // const h = secp256k1.keyFromPublic(hHex, "hex").getPublic(); // H = G^x
-      // const r = secp256k1.genKeyPair(); // случайный скаляр r
-      // const rScalar = r.getPrivate(); // число r
-      // const gr = g.mul(rScalar); // c1 = g^r
-      // const hr = h.mul(rScalar); // h^r
-      // const mPoint = g.mul(m); // m как точка: G * m
-      // const c2 = hr.add(mPoint); // c2 = h^r + G*m
-      // const { c1Hex, c2Hex } = {
-      //   c1Hex: gr.encodeCompressed("hex"),
-      //   c2Hex: c2.encodeCompressed("hex"),
-      // };
-      // const leaf = await this.makeLeaf(
-      //   this.walletStore.credentials.address.toString(),
-      //   secretHex
-      // );
-      // console.log("leaf", leaf);
-      // const decimalLeaf = this.hexToDecimalString(leaf);
-      // console.log("decimalLeaf", decimalLeaf);
-      // const leafBytes = this.hexToBytes(leaf);
-      // console.log("leafBytes", leafBytes);
-      // console.log("commitBytes", this.hexToBytes(commitHex));
-      // console.log("weightBytes", this.int32ToUint64LittleEndianBytes(weight));
-      // const inputMembership = {
-      //   secret: this.hexToDecimalString(secretHex),
-      //   pollId: this.hexToDecimalString(this.poll.pollId),
-      //   weight: weight.toString(),
-      //   leaf: decimalLeaf, // из твоей функции
-      //   commit: this.hexToDecimalString(commitHex),
-      //   nullifier: this.hexToDecimalString(nullifier),
-      //   merklePath: merklePath.map((p) =>
-      //     this.hexToDecimalString(p.siblingHex)
-      //   ),
-      //   merkleDirections: merklePath.map((p) => (p.dir === "left" ? 0 : 1)),
-      // };
-      // console.log(
-      //   "Input being passed to fullProve:",
-      //   JSON.stringify(inputMembership, null, 2)
-      // );
-    },
-    hexToDecimalString(hex) {
-      return new forge.jsbn.BigInteger(hex, 16).toString(10);
-    },
-    pointToDecimalXY(point) {
-      return {
-        x: point.getX().toString(10),
-        y: point.getY().toString(10),
-      };
     },
     async register() {
-      const poseidon = await buildPoseidon();
-      const F = poseidon.F;
-      var secret = this.randomBigInt();
-      localStorage.setItem("secret", secret.toString());
-      const sh = F.toString(poseidon([secret]));
-      const keys = this.walletStore.getKeyes();
-      const confirmParticipationTransaction = {
-        transactionType: 8,
-        publicKey: keys.publicKey.toString(),
-        fromAddress: this.walletStore.credentials.address.toString(),
-        signature: "",
-        timestamp: new Date().toISOString(),
-        pollId: this.poll.pollId,
-        sh,
-      };
-      const rawData = `${confirmParticipationTransaction.publicKey}${confirmParticipationTransaction.fromAddress}${confirmParticipationTransaction.timestamp}${confirmParticipationTransaction.pollId}${confirmParticipationTransaction.sh}`;
-      confirmParticipationTransaction.signature = await signData(
-        rawData,
-        keys.privateKey
-      );
+      this.errorMessage = "";
+      this.isRegistering = true;
       try {
-        const response = await sendTransaction(
-          "poll/confirm-registration",
-          confirmParticipationTransaction
-        );
-        if (response.status !== 200) throw "error";
-        console.log(response.data.weight);
-        localStorage.setItem("weight", response.data.weight);
-      } catch (err) {
-        console.log(err);
-        return;
+        const poseidon = await buildPoseidon();
+        const F = poseidon.F;
+        const secret = this.randomBigInt();
+        localStorage.setItem("secret", secret.toString());
+        const sh = F.toString(poseidon([secret]));
+
+        const keys = this.walletStore.getKeyes();
+        const tx = {
+          transactionType: 8,
+          publicKey: keys.publicKey.toString(),
+          fromAddress: this.walletStore.credentials.address.toString(),
+          signature: "",
+          timestamp: new Date().toISOString(),
+          pollId: this.poll.pollId,
+          sh,
+        };
+        const rawData = `${tx.publicKey}${tx.fromAddress}${tx.timestamp}${tx.pollId}${tx.sh}`;
+        tx.signature = await signData(rawData, keys.privateKey);
+
+        const response = await sendTransaction("poll/confirm-registration", tx);
+        if (response.status === 200) {
+          localStorage.setItem("weight", response.data.weight);
+          this.localRegisteredPolls.push(this.poll.pollId);
+          localStorage.setItem(
+            "localRegisteredPolls",
+            JSON.stringify(this.localRegisteredPolls)
+          );
+        }
+      } catch (e) {
+        this.processError(e);
+      } finally {
+        this.isRegistering = false;
       }
-      console.log("registred");
     },
     async completeRegistaration() {
-      const keys = this.walletStore.getKeyes();
-      const completeRegistration = {
-        transactionType: 9,
-        publicKey: keys.publicKey.toString(),
-        fromAddress: this.walletStore.credentials.address.toString(),
-        signature: "",
-        timestamp: new Date().toISOString(),
-        pollId: this.poll.pollId,
-      };
-      const rawData = `${completeRegistration.publicKey}${completeRegistration.fromAddress}${completeRegistration.timestamp}${completeRegistration.pollId}`;
-      completeRegistration.signature = await signData(rawData, keys.privateKey);
-      const response = await sendTransaction(
-        "poll/finish-registration",
-        completeRegistration
-      );
-      console.log(response);
-    },
-    randomBigInt(bitLength = 256) {
-      if (bitLength % 8 !== 0) {
-        throw new Error("bitLength должен быть кратен 8");
+      this.errorMessage = "";
+      this.isCompletingRegistration = true;
+      try {
+        const keys = this.walletStore.getKeyes();
+        const tx = {
+          transactionType: 9,
+          publicKey: keys.publicKey.toString(),
+          fromAddress: this.walletStore.credentials.address.toString(),
+          signature: "",
+          timestamp: new Date().toISOString(),
+          pollId: this.poll.pollId,
+        };
+        const rawData = `${tx.publicKey}${tx.fromAddress}${tx.timestamp}${tx.pollId}`;
+        tx.signature = await signData(rawData, keys.privateKey);
+        await sendTransaction("poll/finish-registration", tx);
+
+        await this.loadPoll();
+      } catch (e) {
+        this.processError(e);
+      } finally {
+        this.isCompletingRegistration = false;
       }
-
-      const byteLength = bitLength / 8;
-      const randomBytes = new Uint8Array(byteLength);
-      crypto.getRandomValues(randomBytes);
-
-      // Устанавливаем старший бит, чтобы число точно было нужной длины
-      randomBytes[0] |= 0b10000000;
-
-      let hex =
-        "0x" +
-        Array.from(randomBytes)
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("");
-
-      return window.BigInt(hex);
-    },
-    sha256Hex(strUtf8) {
-      return cryptoJS
-        .SHA256(cryptoJS.enc.Utf8.parse(strUtf8))
-        .toString(cryptoJS.enc.Hex); // 64-симв hex
-    },
-    hexToBytes(hex) {
-      const bytes = [];
-      for (let i = 0; i < hex.length; i += 2) {
-        bytes.push(parseInt(hex.slice(i, i + 2), 16));
-      }
-      return bytes;
-    },
-    int32ToUint64LittleEndianBytes(weight) {
-      const bytes = new Uint8Array(8);
-      const w = forge.jsbn.BigInteger.asUintN(
-        64,
-        forge.jsbn.BigInteger(weight)
-      ); // расширяем до 64 бит без знака
-
-      for (let i = 0; i < 8; i++) {
-        bytes[i] = Number((w >> forge.jsbn.BigInteger(i * 8)) & 0xffn);
-      }
-
-      return Array.from(bytes); // возвращаем как обычный массив JS чисел
-    },
-    getOrCreateSecret() {
-      let hex = localStorage.getItem("zkpSecret");
-      if (!hex) {
-        const wa = cryptoJS.lib.WordArray.random(32);
-        hex = wa.toString(cryptoJS.enc.Hex);
-        localStorage.setItem("zkpSecret", hex);
-      }
-      return hex; // 64-симв. hex-строка
-    },
-    makeLeaf(addrString, secretHex) {
-      const addrWA = cryptoJS.enc.Utf8.parse(addrString); // WordArray
-      const secretWA = cryptoJS.enc.Hex.parse(secretHex); // WordArray
-      const allWA = addrWA.concat(secretWA); // склейка
-
-      const digest = cryptoJS.SHA256(allWA); // SHA-256
-      return digest.toString(cryptoJS.enc.Hex); // hex-строка
     },
     async endPoll() {
-      const keys = this.walletStore.getKeyes();
-      const transactionData = {
-        transactionType: 5,
-        publicKey: keys.publicKey.toString(),
-        fromAddress: this.walletStore.credentials.address.toString(),
-        signature: "",
-        timestamp: new Date().toISOString(),
-        pollId: this.poll.pollId,
-      };
-      const rawData = `${transactionData.publicKey}${transactionData.fromAddress}${transactionData.timestamp}${transactionData.pollId}`;
-      transactionData.signature = await signData(rawData, keys.privateKey);
-      await sendTransaction("poll/finish-poll", transactionData);
+      this.errorMessage = "";
+      this.isFinishingPoll = true;
+      try {
+        const keys = this.walletStore.getKeyes();
+        const tx = {
+          transactionType: 5,
+          publicKey: keys.publicKey.toString(),
+          fromAddress: this.walletStore.credentials.address.toString(),
+          signature: "",
+          timestamp: new Date().toISOString(),
+          pollId: this.poll.pollId,
+        };
+        const rawData = `${tx.publicKey}${tx.fromAddress}${tx.timestamp}${tx.pollId}`;
+        tx.signature = await signData(rawData, keys.privateKey);
 
-      console.log("Транзакция успешно отправлена.");
+        await sendTransaction("poll/finish-poll", tx);
 
-      this.poll.isFinished = true;
+        this.poll.isFinished = true;
+        this.fetchResults();
+      } catch (e) {
+        this.processError(e);
+      } finally {
+        this.isFinishingPoll = false;
+      }
+    },
+    randomBigInt(bitLength = 256) {
+      try {
+        const byteLength = bitLength / 8;
+        const randomBytes = new Uint8Array(byteLength);
+        crypto.getRandomValues(randomBytes);
+        randomBytes[0] |= 0b10000000;
+        const hex =
+          "0x" +
+          Array.from(randomBytes)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("");
+        return window.BigInt(hex);
+      } catch (e) {
+        this.processError(e);
+        return 0n;
+      }
     },
   },
 };
 </script>
+
 <style scoped>
 .poll-details {
   max-width: 500px;
@@ -642,6 +579,13 @@ h2 {
   font-size: 18px;
   font-weight: bold;
   margin: 15px 0;
+}
+
+/* Стили для ошибок */
+.error-message {
+  color: #dc3545;
+  font-size: 16px;
+  margin: 10px 0;
 }
 
 .options {
@@ -697,7 +641,14 @@ button {
 .vote-button:hover {
   background: #0056b3;
 }
-
+.weight-message {
+  margin: 10px 0;
+  font-size: 16px;
+  color: #155724;
+  background: #e6f4ea;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
 .vote-button:disabled {
   background: #ccc;
   cursor: not-allowed;

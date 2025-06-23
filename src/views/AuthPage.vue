@@ -9,34 +9,34 @@
 </template>
 
 <script>
-import { loginWallet } from '../services/walletService';
-import { useWalletStore } from '../services/walletStore';
+import { loginWallet } from "../services/walletService";
+import { useWalletStore } from "../services/walletStore";
 export default {
-  name: 'AuthPage',
+  name: "AuthPage",
   setup() {
     const walletStore = useWalletStore();
-    return { 
-      walletStore
+    return {
+      walletStore,
     };
   },
   data() {
     return {
-      address: '',
-      password: '',
-      error: '',
+      address: "",
+      password: "",
+      error: "",
     };
   },
   methods: {
     login() {
-      this.error = '';
+      this.error = "";
       try {
         const wallet = loginWallet(this.address, this.password);
-        console.log('Авторизация успешна:', wallet);
+        console.log("Авторизация успешна:", wallet);
         this.walletStore.setCredentials(this.address, this.password);
-        this.$router.push('/personal-account');
+        this.$router.push("/personal-account");
       } catch (error) {
         this.error = error.message;
-        console.error('Ошибка авторизации:', error.message);
+        console.error("Ошибка авторизации:", error.message);
       }
     },
   },
